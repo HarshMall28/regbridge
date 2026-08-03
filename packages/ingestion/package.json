@@ -1,0 +1,17 @@
+{
+  "name": "@regbridge/ingestion",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "^1.3.14"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@regbridge/db": "workspace:*",
+    "kysely": "^0.29.4",
+    "xlsx": "^0.18.5"
+  }
+}

@@ -1,0 +1,158 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply bg-surface-bg text-txt-primary font-sans;
+  }
+
+  /* Scrollbar */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: theme("colors.border.DEFAULT") transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: theme("colors.border.DEFAULT");
+    border-radius: 3px;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background: theme("colors.border.strong");
+  }
+}
+
+@layer components {
+  /* Status badge */
+  .badge {
+    @apply inline-flex items-center gap-1 px-2 py-0.5
+           rounded-full text-2xs font-medium uppercase tracking-wide;
+  }
+  .badge-approved {
+    @apply text-status-approved-text  bg-status-approved-bg;
+  }
+  .badge-expiring {
+    @apply text-status-expiring-text  bg-status-expiring-bg;
+  }
+  .badge-withdrawn {
+    @apply text-status-withdrawn-text bg-status-withdrawn-bg;
+  }
+  .badge-neutral {
+    @apply text-status-neutral-text   bg-status-neutral-bg;
+  }
+
+  /* Section card */
+  .section-card {
+    @apply bg-surface-card border border-border rounded-lg p-4;
+  }
+
+  /* Data table */
+  .data-table {
+    @apply w-full text-sm border-collapse;
+  }
+  .data-table th {
+    @apply text-left text-2xs font-medium uppercase tracking-wider
+           text-txt-secondary px-3 py-2 border-b border-border;
+  }
+  .data-table td {
+    @apply px-3 py-2 border-b border-border text-sm;
+  }
+  .data-table tr:last-child td {
+    @apply border-b-0;
+  }
+
+  /* Sidebar field row */
+  .field-row {
+    @apply flex justify-between items-center py-1 text-sm;
+  }
+  .field-label {
+    @apply text-txt-secondary text-sm;
+  }
+  .field-value {
+    @apply font-medium text-sm;
+  }
+
+  /* Keyboard shortcut chip */
+  .kbd {
+    @apply inline-flex items-center justify-center
+           min-w-[1.25rem] h-5 px-1.5
+           rounded bg-surface-hover border border-border
+           text-2xs font-mono font-medium text-txt-secondary;
+  }
+
+  /* Palette result row */
+  .palette-row {
+    @apply flex items-center gap-3 px-3 py-2.5 rounded-lg
+           cursor-pointer transition-colors duration-75;
+  }
+  .palette-row[data-highlighted="true"] {
+    @apply bg-palette-highlight border-l-2 border-l-palette-border;
+  }
+
+  /* Country grid badge */
+  .country-badge {
+    @apply w-9 h-7 flex items-center justify-center
+           rounded text-2xs font-semibold;
+  }
+  .country-badge-auth {
+    @apply text-country-auth-text bg-country-auth-bg;
+  }
+  .country-badge-no {
+    @apply text-country-no-text bg-country-no-bg;
+  }
+
+  /* Metric card */
+  .metric-card {
+    @apply border border-border rounded-lg p-3 text-center;
+  }
+  .metric-value {
+    @apply text-xl font-semibold text-brand;
+  }
+  .metric-label {
+    @apply text-2xs text-txt-tertiary mt-1;
+  }
+
+  /* Pagination */
+  .page-btn {
+    @apply w-7 h-7 flex items-center justify-center rounded
+           text-xs cursor-pointer text-txt-secondary;
+  }
+  .page-btn:hover {
+    @apply bg-surface-hover;
+  }
+  .page-btn-active {
+    @apply bg-status-approved-bg text-brand font-medium;
+  }
+
+  /* Link styled like brand */
+  .link-brand {
+    @apply text-brand hover:text-brand-hover cursor-pointer;
+  }
+
+  /* Mono identifier text */
+  .mono-id {
+    @apply font-mono text-sm text-txt-secondary;
+  }
+}
+
+@layer utilities {
+  .focus-ring {
+    @apply focus-visible:outline-none focus-visible:ring-2
+           focus-visible:ring-brand focus-visible:ring-offset-2
+           focus-visible:ring-offset-surface-bg;
+  }
+}

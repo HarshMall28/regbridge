@@ -1,0 +1,28 @@
+{
+  "name": "regbridge",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "migrate": "bun run --env-file .env packages/db/src/migrate.ts",
+    "migrate:down": "bun run --env-file .env packages/db/src/migrate.ts down",
+    "dev:api": "bun run --env-file .env packages/api/src/server.ts",
+    "dev:mcp": "bun run --env-file .env packages/mcp/src/server.ts",
+    "ingest:eu": "bun run --env-file .env packages/ingestion/src/eu-api.ts",
+    "ingest:eu-emergency": "bun run --env-file .env packages/ingestion/src/eu-emergency.ts",
+    "probe:substance-docs": "bun run --env-file .env packages/ingestion/src/probe-substance-docs.ts",
+    "ingest:eu-substance-docs": "bun run --env-file .env packages/ingestion/src/eu-substance-docs.ts",
+    "ingest:ireland": "bun run --env-file .env packages/ingestion/src/ireland-pcs.ts",
+    "ingest:france": "bun run --env-file .env packages/ingestion/src/france-ephy.ts",
+    "ingest:openfoodtox": "bun run --env-file .env packages/ingestion/src/openfoodtox.ts",
+    "test:resolve": "bun run --env-file .env packages/api/src/queries/test-resolve.ts",
+    "test:palette": "bun run --env-file .env packages/api/src/queries/test-palette.ts",
+    "test:latency": "bun run --env-file .env packages/api/src/queries/test-latency.ts",
+    "test:profile": "bun run --env-file .env packages/api/src/queries/test-substance-profile.ts",
+    "test:products": "bun run --env-file .env packages/api/src/queries/test-product-queries.ts",
+    "test:explore": "bun run --env-file .env packages/api/src/queries/test-explore-queries.ts",
+    "test:mrl": "bun run --env-file .env packages/api/src/queries/test-mrl-compliance.ts"
+  }
+}

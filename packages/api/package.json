@@ -1,0 +1,21 @@
+{
+  "name": "@regbridge/api",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "bun run src/server.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@effect/platform": "^0.97.0",
+    "@effect/platform-bun": "^0.91.0",
+    "@regbridge/db": "workspace:*",
+    "effect": "^3.22.0"
+  }
+}
