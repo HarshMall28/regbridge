@@ -208,7 +208,7 @@ function RootInner() {
       )}
 
       {/* Mobile bottom search bar clearance */}
-      <div className="pb-[88px] sm:pb-0">
+      <div className="pb-[96px] sm:pb-0">
         <Outlet />
       </div>
       <FloatingFooter />

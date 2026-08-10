@@ -98,13 +98,19 @@ const CSS = `
 .rb-mob-wrap {
   position:fixed; bottom:0; left:0; right:0; z-index:60;
   flex-shrink:0;
-  padding:0 12px calc(12px + env(safe-area-inset-bottom, 0px));
+  padding:10px 12px calc(12px + env(safe-area-inset-bottom, 0px));
   background:rgba(242,242,242,.96); backdrop-filter:blur(16px);
   border-top:.5px solid rgba(0,0,0,.10);
+  overflow:visible;
 }
-.rb-mob-wrap::before {
-  content:''; position:absolute;
-  top:2px; left:10px; right:10px; bottom:24px; border-radius:50px;
+
+/* Snake sits on a tight ring around the pill (not the full-width bar).
+   Hardcoded top/bottom on the wrap broke once safe-area padding changed. */
+.rb-mob-ring {
+  position:relative;
+}
+.rb-mob-ring::before {
+  content:''; position:absolute; inset:-2px; border-radius:52px;
   background: conic-gradient(
     from var(--snake-angle,0deg) at 50% 50%,
     transparent 0deg, transparent 278deg,
@@ -116,8 +122,8 @@ const CSS = `
   -webkit-mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);
   -webkit-mask-composite:xor; mask-composite:exclude; padding:2px;
 }
-.rb-mob-wrap.snake::before { opacity:1; animation:snake-spin 2s linear infinite; }
-.rb-mob-wrap.snake { filter:drop-shadow(0 0 5px rgba(74,222,128,.18)); }
+.rb-mob-ring.snake::before { opacity:1; animation:snake-spin 2s linear infinite; }
+.rb-mob-ring.snake { filter:drop-shadow(0 0 5px rgba(74,222,128,.18)); }
 
 /* ── mobile pill ── */
 .rb-mob-pill {
@@ -816,8 +822,9 @@ export function CommandPalette({ open, onClose, onAiSubmit }: Props) {
         )}
 
         {/* Always-on mobile search bar */}
-        <div className={`rb-mob-wrap${snakeOn ? " snake" : ""}`}>
-          <div className={`rb-mob-pill${snakeOn ? " ai" : ""}`}>
+        <div className="rb-mob-wrap">
+          <div className={`rb-mob-ring${snakeOn ? " snake" : ""}`}>
+            <div className={`rb-mob-pill${snakeOn ? " ai" : ""}`}>
             <span
               style={{
                 flexShrink: 0,
@@ -872,6 +879,7 @@ export function CommandPalette({ open, onClose, onAiSubmit }: Props) {
               onSend={handleMobSubmit}
               onStop={stop}
             />
+            </div>
           </div>
         </div>
       </div>
