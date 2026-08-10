@@ -10,6 +10,9 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ArchitectureRouteImport } from './routes/architecture'
+import { Route as McpRouteImport } from './routes/mcp'
+import { Route as ApiChatRouteImport } from './routes/api/chat'
 import { Route as CompaniesNameRouteImport } from './routes/companies/$name'
 import { Route as ProductsIndexRouteImport } from './routes/products/index'
 import { Route as SubstancesIdentifierRouteImport } from './routes/substances/$identifier'
@@ -18,6 +21,21 @@ import { Route as ProductsCountryIdRouteImport } from './routes/products/$countr
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ArchitectureRoute = ArchitectureRouteImport.update({
+  id: '/architecture',
+  path: '/architecture',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const McpRoute = McpRouteImport.update({
+  id: '/mcp',
+  path: '/mcp',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiChatRoute = ApiChatRouteImport.update({
+  id: '/api/chat',
+  path: '/api/chat',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CompaniesNameRoute = CompaniesNameRouteImport.update({
@@ -43,6 +61,9 @@ const ProductsCountryIdRoute = ProductsCountryIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/architecture': typeof ArchitectureRoute
+  '/mcp': typeof McpRoute
+  '/api/chat': typeof ApiChatRoute
   '/companies/$name': typeof CompaniesNameRoute
   '/substances/$identifier': typeof SubstancesIdentifierRoute
   '/products/': typeof ProductsIndexRoute
@@ -50,6 +71,9 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/architecture': typeof ArchitectureRoute
+  '/mcp': typeof McpRoute
+  '/api/chat': typeof ApiChatRoute
   '/companies/$name': typeof CompaniesNameRoute
   '/substances/$identifier': typeof SubstancesIdentifierRoute
   '/products': typeof ProductsIndexRoute
@@ -58,6 +82,9 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/architecture': typeof ArchitectureRoute
+  '/mcp': typeof McpRoute
+  '/api/chat': typeof ApiChatRoute
   '/companies/$name': typeof CompaniesNameRoute
   '/substances/$identifier': typeof SubstancesIdentifierRoute
   '/products/': typeof ProductsIndexRoute
@@ -67,6 +94,9 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/architecture'
+    | '/mcp'
+    | '/api/chat'
     | '/companies/$name'
     | '/substances/$identifier'
     | '/products/'
@@ -74,6 +104,9 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/architecture'
+    | '/mcp'
+    | '/api/chat'
     | '/companies/$name'
     | '/substances/$identifier'
     | '/products'
@@ -81,6 +114,9 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/architecture'
+    | '/mcp'
+    | '/api/chat'
     | '/companies/$name'
     | '/substances/$identifier'
     | '/products/'
@@ -89,6 +125,9 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ArchitectureRoute: typeof ArchitectureRoute
+  McpRoute: typeof McpRoute
+  ApiChatRoute: typeof ApiChatRoute
   CompaniesNameRoute: typeof CompaniesNameRoute
   SubstancesIdentifierRoute: typeof SubstancesIdentifierRoute
   ProductsIndexRoute: typeof ProductsIndexRoute
@@ -102,6 +141,27 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/architecture': {
+      id: '/architecture'
+      path: '/architecture'
+      fullPath: '/architecture'
+      preLoaderRoute: typeof ArchitectureRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mcp': {
+      id: '/mcp'
+      path: '/mcp'
+      fullPath: '/mcp'
+      preLoaderRoute: typeof McpRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/chat': {
+      id: '/api/chat'
+      path: '/api/chat'
+      fullPath: '/api/chat'
+      preLoaderRoute: typeof ApiChatRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/companies/$name': {
@@ -137,6 +197,9 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ArchitectureRoute: ArchitectureRoute,
+  McpRoute: McpRoute,
+  ApiChatRoute: ApiChatRoute,
   CompaniesNameRoute: CompaniesNameRoute,
   SubstancesIdentifierRoute: SubstancesIdentifierRoute,
   ProductsIndexRoute: ProductsIndexRoute,

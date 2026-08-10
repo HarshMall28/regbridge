@@ -16,6 +16,7 @@ import { db, sql } from "../connection";
 // ---------------------------------------------------------------------------
 
 export interface ProductSearchParams {
+  q?: string;
   substance?: string;
   country?: "ie" | "fr" | "both";
   auth_holder?: string;
@@ -196,6 +197,24 @@ async function searchIeProducts(
       "ip.function_name",
     ]);
 
+  // General text search across product name, auth holder, and substance
+  if (params.q) {
+    const q = params.q.toLowerCase();
+    query = query
+      .leftJoin(
+        "ie_product_substances as ips_q",
+        "ips_q.product_id",
+        "ip.product_id",
+      )
+      .where((eb) =>
+        eb.or([
+          eb(sql`LOWER(ip.product_name)`, "like", `%${q}%`),
+          eb(sql`LOWER(ip.auth_holder)`, "like", `%${q}%`),
+          eb(sql`LOWER(ips_q.substance_name)`, "like", `%${q}%`),
+        ]),
+      ) as typeof query;
+  }
+
   // Substance filter
   if (params.substance) {
     query = query
@@ -233,6 +252,23 @@ async function searchIeProducts(
     .select(
       sql<number>`count(DISTINCT ip.product_id)::int`.as("total"),
     );
+
+  if (params.q) {
+    const q = params.q.toLowerCase();
+    countQ = countQ
+      .leftJoin(
+        "ie_product_substances as ips_q",
+        "ips_q.product_id",
+        "ip.product_id",
+      )
+      .where((eb) =>
+        eb.or([
+          eb(sql`LOWER(ip.product_name)`, "like", `%${q}%`),
+          eb(sql`LOWER(ip.auth_holder)`, "like", `%${q}%`),
+          eb(sql`LOWER(ips_q.substance_name)`, "like", `%${q}%`),
+        ]),
+      ) as typeof countQ;
+  }
 
   if (params.substance) {
     countQ = countQ
@@ -325,6 +361,24 @@ async function searchFrProducts(
       "MELANGE",
     ]);
 
+  // General text search across product name, titulaire, and substance
+  if (params.q) {
+    const q = params.q.toLowerCase();
+    query = query
+      .leftJoin(
+        "fr_product_substances as fps_q",
+        "fps_q.amm_number",
+        "fp.amm_number",
+      )
+      .where((eb) =>
+        eb.or([
+          eb(sql`LOWER(fp.product_name)`, "like", `%${q}%`),
+          eb(sql`LOWER(fp.titulaire)`, "like", `%${q}%`),
+          eb(sql`LOWER(fps_q.substance_name)`, "like", `%${q}%`),
+        ]),
+      ) as typeof query;
+  }
+
   // Substance filter
   if (params.substance) {
     query = query
@@ -362,6 +416,23 @@ async function searchFrProducts(
       "PRODUIT-MIXTE",
       "MELANGE",
     ]);
+
+  if (params.q) {
+    const q = params.q.toLowerCase();
+    countQ = countQ
+      .leftJoin(
+        "fr_product_substances as fps_q",
+        "fps_q.amm_number",
+        "fp.amm_number",
+      )
+      .where((eb) =>
+        eb.or([
+          eb(sql`LOWER(fp.product_name)`, "like", `%${q}%`),
+          eb(sql`LOWER(fp.titulaire)`, "like", `%${q}%`),
+          eb(sql`LOWER(fps_q.substance_name)`, "like", `%${q}%`),
+        ]),
+      ) as typeof countQ;
+  }
 
   if (params.substance) {
     countQ = countQ

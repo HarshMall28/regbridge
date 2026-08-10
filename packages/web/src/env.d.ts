@@ -1,6 +1,8 @@
-// src/env.d.ts
-/// <reference types="vite/client" />
-declare module "*.css?url" {
-  const url: string;
-  export default url;
+// packages/web/src/env.d.ts
+declare module "cloudflare:workers" {
+  const env: {
+    API: Fetcher;
+    API_KEY: string;
+  };
+  export { env };
 }

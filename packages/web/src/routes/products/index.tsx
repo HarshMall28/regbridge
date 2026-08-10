@@ -6,11 +6,11 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { useState, useMemo } from "react";
 import { serverSearchProducts } from "~/lib/server-fns";
-import type {
-  ProductSearchParams,
-  ProductSearchResult,
-} from "../../lib/api-products";
-import { countryFlag } from "../../lib/api-products";
+import type { ProductSearchParams } from "../../lib/types";
+import type { ProductSearchResponse } from "@regbridge/api-client";
+
+type ProductSearchResult = ProductSearchResponse["results"][number];
+import { countryFlag } from "../../lib/types";
 import { Pagination } from "../../components/Pagination";
 import { StatusBadge } from "../../components/StatusBadge";
 
@@ -251,7 +251,7 @@ function ProductsListPage() {
                 </tr>
               </thead>
               <tbody>
-                {data.results.map((p: ProductSearchResult) => (
+                {data.results.map((p) => (
                   <ProductRow
                     key={`${p.country}-${p.product_id}`}
                     product={p}
@@ -263,7 +263,7 @@ function ProductsListPage() {
 
           {/* Mobile cards */}
           <div className="sm:hidden flex flex-col gap-3">
-            {data.results.map((p: ProductSearchResult) => (
+            {data.results.map((p) => (
               <ProductCard
                 key={`${p.country}-${p.product_id}`}
                 product={p}
@@ -348,13 +348,17 @@ function ProductRow({
         {p.product_id}
       </td>
       <td className="px-4 py-3">
-        <Link
-          to="/companies/$name"
-          params={{ name: p.auth_holder }}
-          className="text-secondary hover:text-brand hover:underline"
-        >
-          {p.auth_holder}
-        </Link>
+        {p.auth_holder ? (
+          <Link
+            to="/companies/$name"
+            params={{ name: p.auth_holder }}
+            className="text-secondary hover:text-brand hover:underline"
+          >
+            {p.auth_holder}
+          </Link>
+        ) : (
+          <span className="text-secondary">—</span>
+        )}
       </td>
       <td className="px-4 py-3 text-secondary">
         {p.fonctions ?? "—"}
@@ -395,17 +399,20 @@ function ProductCard({
         <span className="text-tertiary">·</span>
         <span>{p.fonctions ?? "—"}</span>
       </div>
-      <button
-        onClick={() =>
-          navigate({
-            to: "/companies/$name",
-            params: { name: p.auth_holder },
-          })
-        }
-        className="text-xs text-secondary hover:text-brand hover:underline text-left"
-      >
-        {p.auth_holder}
-      </button>
+      {p.auth_holder ? (
+        <button
+          onClick={() =>
+            navigate({
+              to: "/companies/$name",
+              params: { name: p.auth_holder! },
+            })
+          }
+        >
+          {p.auth_holder}
+        </button>
+      ) : (
+        <span>—</span>
+      )}
       {p.substances && (
         <p className="text-xs text-tertiary mt-1 truncate">
           {p.substances}

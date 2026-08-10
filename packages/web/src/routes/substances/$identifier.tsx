@@ -1,20 +1,28 @@
-import { useState, useRef } from "react";
+import { useState, useRef, type ReactNode } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
   serverGetSubstanceProfile,
   serverCheckMrl,
 } from "~/lib/server-fns";
-import type { SubstanceProfile } from "~/lib/api";
+import type {
+  EmergencyAuth,
+  SubstanceProfile,
+} from "../../lib/types";
 import { StatusBadge, ExpiryBadge } from "~/components/StatusBadge";
 import { Pagination } from "~/components/Pagination";
 import {
-  resolveStatus,
-  isExpiringSoon,
   SUBSTANCE_SECTIONS,
   EU_COUNTRIES,
   PAGINATION,
 } from "~/lib/tokens";
+
+type SubstanceCategory = SubstanceProfile["categories"][number];
+type GroupMember = SubstanceProfile["group"]["members"][number];
+type Metabolite = SubstanceProfile["metabolites"][number];
+type SubstanceDocument = SubstanceProfile["documents"][number];
+type SubstanceDossier = SubstanceProfile["dossiers"][number];
+type ToxOftEntry = SubstanceProfile["tox_oft"][number];
 
 export const Route = createFileRoute("/substances/$identifier")({
   component: SubstancePage,
@@ -89,7 +97,7 @@ function SubstanceProfileView({ data }: { data: SubstanceProfile }) {
 
   // Determine which sections to show
   const hasMetabolites = data.metabolites.some(
-    (m) => m.name !== null,
+    (m: any) => m.name !== null,
   );
   const hasGroup = data.group.is_group || data.group.part_of_group;
   const visibleSections = SUBSTANCE_SECTIONS.filter((s) => {
@@ -99,9 +107,59 @@ function SubstanceProfileView({ data }: { data: SubstanceProfile }) {
 
   return (
     <div className="max-w-7xl mx-auto">
+      {/* ---- MOBILE HEADER ---- */}
+      <div className="lg:hidden sticky top-[49px] z-20 bg-surface-sidebar border-b border-border">
+        <div className="px-4 pt-3 pb-2">
+          <h1 className="text-lg font-semibold text-txt-primary leading-tight">
+            {id.name}
+          </h1>
+          {id.cas_number && (
+            <p className="font-mono text-xs text-txt-secondary mt-0.5">
+              {id.cas_number}
+            </p>
+          )}
+          <div className="mt-1.5">
+            <StatusBadge status={id.status} />
+          </div>
+        </div>
+        <div className="flex gap-2 overflow-x-auto px-4 pb-2 scrollbar-none">
+          <MetricChip
+            value={data.country_count}
+            label="Countries"
+            onClick={() => scrollTo("member-states")}
+          />
+          <MetricChip
+            value={data.ie_product_count}
+            label="IE prod."
+            onClick={() => scrollTo("ie-products")}
+          />
+          <MetricChip
+            value={data.fr_product_count}
+            label="FR prod."
+            onClick={() => scrollTo("fr-products")}
+          />
+          <MetricChip
+            value={data.emergency_auth_count}
+            label="Emerg."
+            onClick={() => scrollTo("emergency-auths")}
+          />
+        </div>
+        <nav className="flex gap-1 overflow-x-auto px-4 pb-2 scrollbar-none">
+          {visibleSections.map((s) => (
+            <button
+              key={s.id}
+              onClick={() => scrollTo(s.id)}
+              className="flex-shrink-0 px-2.5 py-1 text-xs rounded-full border border-border bg-surface-card text-txt-secondary hover:text-brand hover:border-brand transition-colors"
+            >
+              {s.label}
+            </button>
+          ))}
+        </nav>
+      </div>
+
       <div className="flex flex-col lg:flex-row min-h-[calc(100vh-49px)]">
-        {/* ---- SIDEBAR ---- */}
-        <aside className="w-full lg:w-[280px] flex-shrink-0 bg-surface-sidebar border-b lg:border-b-0 lg:border-r border-border p-4 overflow-y-auto lg:sticky lg:top-[49px] lg:h-[calc(100vh-49px)]">
+        {/* ---- SIDEBAR (desktop only) ---- */}
+        <aside className="hidden lg:block w-[280px] flex-shrink-0 bg-surface-sidebar lg:border-r border-border p-4 overflow-y-auto lg:sticky lg:top-[49px] lg:h-[calc(100vh-49px)]">
           {/* Identity */}
           <h1 className="text-xl font-semibold text-txt-primary leading-tight">
             {id.name}
@@ -151,7 +209,7 @@ function SubstanceProfileView({ data }: { data: SubstanceProfile }) {
           {/* Category + flags */}
           {data.categories.length > 0 && (
             <div className="flex flex-wrap gap-1 mt-3">
-              {data.categories.map((c) => (
+              {data.categories.map((c: SubstanceCategory) => (
                 <span key={c.code} className="badge badge-neutral">
                   {c.name ?? c.code}
                 </span>
@@ -253,14 +311,103 @@ function SubstanceProfileView({ data }: { data: SubstanceProfile }) {
         </aside>
 
         {/* ---- MAIN CONTENT ---- */}
-        <main className="flex-1 p-5 space-y-4 overflow-y-auto">
+        <main className="flex-1 p-4 lg:p-5 space-y-4 overflow-y-auto">
+          {/* Key facts & tox — mobile collapsible */}
+          <details className="lg:hidden section-card group">
+            <summary className="text-sm font-medium text-txt-primary cursor-pointer list-none flex items-center justify-between">
+              Key facts & tox
+              <span className="text-txt-tertiary text-xs group-open:rotate-180 transition-transform">
+                ▾
+              </span>
+            </summary>
+            <div className="mt-3 space-y-3">
+              <div className="space-y-1">
+                <div className="field-row">
+                  <span className="field-label">Approved</span>
+                  <span className="field-value text-sm">
+                    {id.approval_dt
+                      ? formatDate(id.approval_dt)
+                      : "—"}
+                  </span>
+                </div>
+                <div className="field-row">
+                  <span className="field-label">Expires</span>
+                  <span className="field-value text-sm flex items-center gap-1.5">
+                    {id.expiry_dt ? formatDate(id.expiry_dt) : "—"}
+                    <ExpiryBadge expiryDt={id.expiry_dt} />
+                  </span>
+                </div>
+              </div>
+              <div className="space-y-1">
+                <div className="field-row">
+                  <span className="field-label">RMS</span>
+                  <span className="field-value">{id.rms ?? "—"}</span>
+                </div>
+                <div className="field-row">
+                  <span className="field-label">CoRMS</span>
+                  <span className="field-value">
+                    {id.corms ?? "—"}
+                  </span>
+                </div>
+              </div>
+              {data.categories.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {data.categories.map((c: SubstanceCategory) => (
+                    <span
+                      key={c.code}
+                      className="badge badge-neutral"
+                    >
+                      {c.name ?? c.code}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {id.candidate_for_substitution && (
+                <span className="badge badge-withdrawn">
+                  Candidate for substitution
+                </span>
+              )}
+              <div className="space-y-0.5 pt-1 border-t border-border">
+                <ToxSummaryRow
+                  label="ADI"
+                  value={data.tox_eu.adi.value}
+                />
+                <ToxSummaryRow
+                  label="ARfD"
+                  value={data.tox_eu.arfd.value}
+                />
+                <ToxSummaryRow
+                  label="AOEL"
+                  value={data.tox_eu.aoel.value}
+                />
+                <ToxSummaryRow
+                  label="AAOEL"
+                  value={data.tox_eu.aaoel.value}
+                />
+                <ToxSummaryRow
+                  label="Genotox"
+                  value={
+                    parseGenotoxConclusion(
+                      data.genotoxicity.conclusion,
+                    ).label
+                  }
+                  isNegative={
+                    !parseGenotoxConclusion(
+                      data.genotoxicity.conclusion,
+                    ).isClean
+                  }
+                />
+              </div>
+            </div>
+          </details>
+
           {/* Group banner */}
           {hasGroup && (
             <div className="section-card bg-status-approved-bg border-brand/20">
               <span className="text-sm font-medium text-txt-primary">
                 Part of group:{" "}
               </span>
-              {data.group.members.map((m) => (
+              {data.group.members.map((m: GroupMember) => (
                 <Link
                   key={m.as_id}
                   to="/substances/$identifier"
@@ -281,7 +428,37 @@ function SubstanceProfileView({ data }: { data: SubstanceProfile }) {
             className="section-card"
           >
             <SectionHeader title="Toxicological Reference Values" />
-            <div className="overflow-x-auto">
+            <div className="md:hidden space-y-2">
+              <ToxMobileRow label="ADI" tox={data.tox_eu.adi} />
+              <ToxMobileRow label="ARfD" tox={data.tox_eu.arfd} />
+              <ToxMobileRow label="AOEL" tox={data.tox_eu.aoel} />
+              <ToxMobileRow label="AAOEL" tox={data.tox_eu.aaoel} />
+              <div className="p-3 border border-border rounded-lg">
+                <div className="text-xs text-txt-tertiary mb-1">
+                  Genotoxicity
+                </div>
+                <div
+                  className={`font-mono text-sm ${parseGenotoxConclusion(data.genotoxicity.conclusion).isClean ? "text-brand" : "text-status-withdrawn-text"}`}
+                >
+                  {
+                    parseGenotoxConclusion(
+                      data.genotoxicity.conclusion,
+                    ).label
+                  }
+                </div>
+                {(data.genotoxicity.in_vitro_link ||
+                  data.genotoxicity.in_vivo_link) && (
+                  <div className="text-xs text-txt-tertiary mt-1">
+                    {data.genotoxicity.in_vitro_link && "In vitro"}
+                    {data.genotoxicity.in_vitro_link &&
+                      data.genotoxicity.in_vivo_link &&
+                      " / "}
+                    {data.genotoxicity.in_vivo_link && "In vivo"}
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="hidden md:block overflow-x-auto">
               <table className="data-table">
                 <thead>
                   <tr>
@@ -421,7 +598,9 @@ function SubstanceProfileView({ data }: { data: SubstanceProfile }) {
             >
               <SectionHeader
                 title="Metabolites"
-                count={data.metabolites.filter((m) => m.name).length}
+                count={
+                  data.metabolites.filter((m: any) => m.name).length
+                }
               />
               <div className="overflow-x-auto">
                 <table className="data-table">
@@ -433,8 +612,8 @@ function SubstanceProfileView({ data }: { data: SubstanceProfile }) {
                   </thead>
                   <tbody>
                     {data.metabolites
-                      .filter((m) => m.name)
-                      .map((m, i) => (
+                      .filter((m: any) => m.name)
+                      .map((m: Metabolite, i: number) => (
                         <tr key={m.uuid ?? i}>
                           <td className="font-medium">{m.name}</td>
                           <td className="text-xs text-txt-tertiary">
@@ -462,32 +641,34 @@ function SubstanceProfileView({ data }: { data: SubstanceProfile }) {
                   Documents ({data.documents.length})
                 </p>
                 <div className="space-y-1 mb-4">
-                  {data.documents.map((d, i) => (
-                    <div
-                      key={i}
-                      className="flex items-center gap-2 py-1 border-b border-border text-sm"
-                    >
-                      <span className="text-txt-tertiary">📄</span>
-                      <span className="flex-1 truncate">
-                        {d.filename ?? d.description ?? "Document"}
-                      </span>
-                      {d.document_type && (
-                        <span className="badge badge-neutral">
-                          {d.document_type}
+                  {data.documents.map(
+                    (d: SubstanceDocument, i: number) => (
+                      <div
+                        key={i}
+                        className="flex items-center gap-2 py-1 border-b border-border text-sm"
+                      >
+                        <span className="text-txt-tertiary">📄</span>
+                        <span className="flex-1 line-clamp-2">
+                          {d.filename ?? d.description ?? "Document"}
                         </span>
-                      )}
-                      {d.source_url && (
-                        <a
-                          href={d.source_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-brand text-xs"
-                        >
-                          ↗
-                        </a>
-                      )}
-                    </div>
-                  ))}
+                        {d.document_type && (
+                          <span className="badge badge-neutral">
+                            {d.document_type}
+                          </span>
+                        )}
+                        {d.source_url && (
+                          <a
+                            href={d.source_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-brand text-xs"
+                          >
+                            ↗
+                          </a>
+                        )}
+                      </div>
+                    ),
+                  )}
                 </div>
               </>
             )}
@@ -497,33 +678,35 @@ function SubstanceProfileView({ data }: { data: SubstanceProfile }) {
                   EFSA Opinions ({data.dossiers.length})
                 </p>
                 <div className="space-y-1">
-                  {data.dossiers.map((d, i) => (
-                    <div
-                      key={i}
-                      className="flex items-center gap-2 py-1 border-b border-border text-sm"
-                    >
-                      <span className="text-txt-tertiary">📋</span>
-                      <span className="flex-1 truncate">
-                        {d.output_title ??
-                          d.efsa_question_number ??
-                          "Opinion"}
-                      </span>
-                      {d.doi && (
-                        <a
-                          href={
-                            d.doi.startsWith("http")
-                              ? d.doi
-                              : `https://doi.org/${d.doi.replace(/^doi:/, "")}`
-                          }
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-brand text-xs"
-                        >
-                          DOI ↗
-                        </a>
-                      )}
-                    </div>
-                  ))}
+                  {data.dossiers.map(
+                    (d: SubstanceDossier, i: number) => (
+                      <div
+                        key={i}
+                        className="flex items-center gap-2 py-1 border-b border-border text-sm"
+                      >
+                        <span className="text-txt-tertiary">📋</span>
+                        <span className="flex-1 line-clamp-2">
+                          {d.output_title ??
+                            d.efsa_question_number ??
+                            "Opinion"}
+                        </span>
+                        {d.doi && (
+                          <a
+                            href={
+                              d.doi.startsWith("http")
+                                ? d.doi
+                                : `https://doi.org/${d.doi.replace(/^doi:/, "")}`
+                            }
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-brand text-xs"
+                          >
+                            DOI ↗
+                          </a>
+                        )}
+                      </div>
+                    ),
+                  )}
                 </div>
               </>
             )}
@@ -580,6 +763,28 @@ function SectionHeader({
   );
 }
 
+function MetricChip({
+  value,
+  label,
+  onClick,
+}: {
+  value: number;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex-shrink-0 min-w-[72px] px-3 py-1.5 rounded-lg border border-border bg-surface-card hover:border-brand transition-colors text-center"
+    >
+      <div className="text-base font-semibold text-txt-primary leading-none">
+        {value}
+      </div>
+      <div className="text-2xs text-txt-tertiary mt-0.5">{label}</div>
+    </button>
+  );
+}
+
 function MetricCard({
   value,
   label,
@@ -623,6 +828,43 @@ function ToxSummaryRow({
   );
 }
 
+function ToxMobileRow({
+  label,
+  tox,
+}: {
+  label: string;
+  tox: {
+    value: string | null;
+    source: string | null;
+    remark: string | null;
+  };
+}) {
+  const hasVal = tox.value !== null && tox.value !== "";
+  return (
+    <div className="p-3 border border-border rounded-lg">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-sm font-medium text-txt-primary">
+          {label}
+        </span>
+        <span
+          className={`font-mono text-sm ${hasVal ? "text-brand" : "text-txt-tertiary"}`}
+        >
+          {tox.value ?? "—"}
+        </span>
+      </div>
+      {(tox.source || tox.remark) && (
+        <div className="mt-1 text-xs text-txt-tertiary">
+          {tox.source && (
+            <span className="mono-id">{tox.source}</span>
+          )}
+          {tox.source && tox.remark && " · "}
+          {tox.remark}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ToxRow({
   label,
   tox,
@@ -662,14 +904,14 @@ function OftExpander({
   const [open, setOpen] = useState(false);
 
   const useful = entries.filter(
-    (e) =>
+    (e: any) =>
       e.endpoint_type &&
       e.endpoint_type !== "NONE" &&
       (e.value_lower !== null || e.value_upper !== null),
   );
 
   const hasExtraInfo = useful.some(
-    (e) =>
+    (e: any) =>
       e.assessment_body || e.critical_endpoint || e.justification,
   );
 
@@ -702,7 +944,7 @@ function OftExpander({
               </tr>
             </thead>
             <tbody>
-              {useful.map((e, i) => (
+              {useful.map((e: ToxOftEntry, i: number) => (
                 <tr key={i}>
                   <td className="font-medium">{e.endpoint_type}</td>
                   <td className="mono-id">{e.value_lower ?? "—"}</td>
@@ -750,11 +992,51 @@ function ProductSection<T extends Record<string, any>>({
     to: any;
     params: Record<string, string>;
   };
-  renderCell?: (col: string, val: any) => React.ReactNode | undefined;
+  renderCell?: (col: string, val: unknown) => ReactNode | undefined;
 }) {
   const [page, setPage] = useState(0);
   const ps = PAGINATION.defaultPageSize;
   const paged = items.slice(page * ps, (page + 1) * ps);
+
+  const renderCellValue = (
+    col: string,
+    val: any,
+    item: T,
+    ci: number,
+  ) => {
+    const custom = renderCell?.(col, val);
+    if (custom !== undefined) return custom;
+    if (col === "auth_holder" || col === "titulaire") {
+      return (
+        <Link
+          to="/companies/$name"
+          params={{ name: val ?? "" }}
+          className="link-brand text-sm"
+        >
+          {val ?? "—"}
+        </Link>
+      );
+    }
+    if (ci === 0) {
+      const link = linkBuilder(item);
+      return (
+        <Link
+          to="/products/$country/$id"
+          params={{
+            country: link.params.country,
+            id: link.params.id,
+          }}
+          className="link-brand text-sm"
+        >
+          {val ?? "—"}
+        </Link>
+      );
+    }
+    if (col.includes("number") || col === "pcs_number") {
+      return <span className="mono-id">{val ?? "—"}</span>;
+    }
+    return <span className="text-sm">{val ?? "—"}</span>;
+  };
 
   return (
     <div className="section-card">
@@ -764,7 +1046,26 @@ function ProductSection<T extends Record<string, any>>({
         </h2>
         <span className="badge badge-approved">{count} total</span>
       </div>
-      <div className="overflow-x-auto">
+      <div className="md:hidden space-y-2">
+        {paged.map((item, i) => (
+          <div
+            key={i}
+            className="p-3 border border-border rounded-lg space-y-1.5"
+          >
+            {columns.map((col, ci) => (
+              <div key={col} className="flex gap-2 text-sm">
+                <span className="text-txt-tertiary flex-shrink-0 w-16">
+                  {headers[ci]}
+                </span>
+                <span className="flex-1 min-w-0 break-words">
+                  {renderCellValue(col, item[col], item, ci)}
+                </span>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+      <div className="hidden md:block overflow-x-auto">
         <table className="data-table">
           <thead>
             <tr>
@@ -863,14 +1164,14 @@ function EmergencyAuthSection({
   const [page, setPage] = useState(0);
   const ps = PAGINATION.defaultPageSize;
   const sorted = [...auths].sort(
-    (a, b) =>
+    (a: EmergencyAuth, b: EmergencyAuth) =>
       new Date(b.valid_from ?? 0).getTime() -
       new Date(a.valid_from ?? 0).getTime(),
   );
   const paged = sorted.slice(page * ps, (page + 1) * ps);
 
   const freq: Record<string, number> = {};
-  auths.forEach((a) => {
+  auths.forEach((a: EmergencyAuth) => {
     if (a.country_code)
       freq[a.country_code] = (freq[a.country_code] || 0) + 1;
   });
@@ -886,7 +1187,29 @@ function EmergencyAuthSection({
         </h2>
         <span className="badge badge-expiring">{auths.length}</span>
       </div>
-      <div className="overflow-x-auto">
+      <div className="md:hidden space-y-2">
+        {paged.map((a: EmergencyAuth) => (
+          <div
+            key={a.id}
+            className="p-3 border border-border rounded-lg"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-medium text-txt-primary">
+                {a.country_code ?? "—"}
+              </span>
+              <span className="text-xs font-mono text-txt-secondary flex-shrink-0">
+                {a.valid_from ? formatDateShort(a.valid_from) : "—"}
+                {" – "}
+                {a.valid_until ? formatDateShort(a.valid_until) : "—"}
+              </span>
+            </div>
+            <div className="text-sm text-txt-secondary mt-1 break-words">
+              {a.auth_holder ?? "—"}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="hidden md:block overflow-x-auto">
         <table className="data-table">
           <thead>
             <tr>
@@ -896,7 +1219,7 @@ function EmergencyAuthSection({
             </tr>
           </thead>
           <tbody>
-            {paged.map((a) => (
+            {paged.map((a: EmergencyAuth) => (
               <tr key={a.id}>
                 <td className="font-medium">
                   {a.country_code ?? "—"}
@@ -922,7 +1245,9 @@ function EmergencyAuthSection({
       {topCountries.length > 0 && (
         <p className="text-2xs text-txt-tertiary italic mt-2">
           Demand signal →{" "}
-          {topCountries.map(([c, n]) => `${c} (${n})`).join(", ")}
+          {topCountries
+            .map(([c, n]: [string, number]) => `${c} (${n})`)
+            .join(", ")}
         </p>
       )}
     </div>
@@ -953,6 +1278,9 @@ function MrlSection({ substanceName }: { substanceName: string }) {
     if (commodity.length >= 2) setSearchCommodity(commodity);
   };
 
+  const commodityResults = mrlData?.commodity_results ?? [];
+  const firstCommodity = commodityResults[0];
+
   return (
     <div className="section-card">
       <SectionHeader title="MRL Compliance Check" />
@@ -960,18 +1288,18 @@ function MrlSection({ substanceName }: { substanceName: string }) {
         Check maximum residue limits for this substance against any
         commodity
       </p>
-      <div className="flex gap-2 mb-3">
+      <div className="flex flex-col sm:flex-row gap-2 mb-3">
         <input
           value={commodity}
           onChange={(e) => setCommodity(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleCheck()}
           placeholder="Commodity e.g. Wheat, Apples, Rice"
-          className="flex-1 h-9 px-3 text-sm border border-border rounded-lg bg-surface-card text-txt-primary placeholder:text-txt-tertiary focus:border-brand outline-none transition-colors"
+          className="flex-1 h-10 sm:h-9 px-3 text-sm border border-border rounded-lg bg-surface-card text-txt-primary placeholder:text-txt-tertiary focus:border-brand outline-none transition-colors"
         />
         <button
           onClick={handleCheck}
           disabled={commodity.length < 2}
-          className="h-9 px-4 text-sm border border-border rounded-lg bg-surface-hover text-txt-primary hover:border-brand transition-colors disabled:opacity-40"
+          className="h-10 sm:h-9 px-4 text-sm border border-border rounded-lg bg-surface-hover text-txt-primary hover:border-brand transition-colors disabled:opacity-40"
         >
           {isFetching ? "..." : "Check"}
         </button>
@@ -979,12 +1307,12 @@ function MrlSection({ substanceName }: { substanceName: string }) {
 
       {mrlData && (
         <div>
-          {mrlData.commodity_results?.length > 0 ? (
+          {commodityResults.length > 0 && firstCommodity ? (
             <>
-              <div className="grid grid-cols-3 gap-3 mb-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
                 <div className="text-center p-3 border border-border rounded-lg">
                   <div className="text-xl font-semibold font-mono text-brand">
-                    {mrlData.commodity_results[0]?.mrl?.value ??
+                    {firstCommodity.mrl?.value ??
                       mrlData.default_mrl?.value ??
                       "—"}
                   </div>
@@ -994,17 +1322,15 @@ function MrlSection({ substanceName }: { substanceName: string }) {
                 </div>
                 <div className="text-center p-3 border border-border rounded-lg">
                   <div className="text-sm font-medium text-txt-primary">
-                    {mrlData.commodity_results[0]?.product_name ??
-                      searchCommodity}
+                    {firstCommodity.product_name ?? searchCommodity}
                   </div>
                   <div className="text-2xs text-txt-tertiary mt-1">
-                    {mrlData.commodity_results[0]?.product_code ?? ""}
+                    {firstCommodity.product_code ?? ""}
                   </div>
                 </div>
                 <div className="text-center p-3 border border-border rounded-lg">
                   <div className="text-xs font-mono text-txt-secondary">
-                    {mrlData.commodity_results[0]?.mrl
-                      ?.regulation_number ?? "—"}
+                    {firstCommodity.mrl?.regulation_number ?? "—"}
                   </div>
                   <div className="text-2xs text-txt-tertiary mt-1">
                     Regulation
@@ -1054,7 +1380,7 @@ function CountryGridSection({
   corms: string | null;
 }) {
   const authorizedCodes = new Set(
-    countries.map((c) => c.country_code),
+    countries.map((c: { country_code: string }) => c.country_code),
   );
   return (
     <div className="section-card">
@@ -1169,6 +1495,18 @@ function LegislationLinks({
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+function formatDateShort(dt: string): string {
+  try {
+    return new Date(dt).toLocaleDateString("en-GB", {
+      day: "numeric",
+      month: "short",
+      year: "2-digit",
+    });
+  } catch {
+    return dt;
+  }
+}
 
 function formatDate(dt: string): string {
   try {

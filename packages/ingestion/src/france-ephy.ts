@@ -10,7 +10,9 @@
  * Run: bun run --env-file .env packages/ingestion/src/france-ephy.ts
  */
 
-import { db, sql } from "@regbridge/db";
+import { db, initDb, sql } from "@regbridge/db";
+
+initDb(Bun.env.DATABASE_URL!);
 import type { Insertable } from "kysely";
 import type {
   FrProductsTable,

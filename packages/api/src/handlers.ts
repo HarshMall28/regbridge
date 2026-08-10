@@ -114,6 +114,7 @@ const ProductsGroupLive = HttpApiBuilder.group(
         Effect.tryPromise({
           try: () =>
             searchProducts({
+              q: urlParams.q,
               substance: urlParams.substance,
               country:
                 (urlParams.country as "ie" | "fr" | "both") ?? "both",
