@@ -10,7 +10,8 @@ import {
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { z } from "zod";
 import { env } from "cloudflare:workers";
-import type { Fetcher } from "@cloudflare/workers-types";
+import { createApiClient } from "@regbridge/api-client";
+import type { ProductSearchParams } from "@regbridge/api-client";
 
 const SYSTEM_PROMPT = `You are a regulatory intelligence analyst for EU crop protection data. You have access to RegBridge — 32 tables covering EU substance approvals, EFSA toxicology, and national product registers for Ireland and France.
 
@@ -36,17 +37,17 @@ TOOL ROUTING — follow exactly, minimum tool calls:
 
 1. "MRL / residue limit for X on Y" → call check_mrl_compliance(substance, commodity) ONCE. Done. Never call get_substance_profile or explore_table for MRL questions.
 
-2. "Profile / status / approval / expiry / tox values for substance X" → call get_substance_profile(identifier) ONCE. Done.
+2. "Profile / status / approval / expiry / tox values for substance X" → call get_substance_profile(identifier) ONCE. Done. For multiple named substances, call get_substance_profile once per substance (cap at 5).
 
-3. "Products containing X" or "products by company Y" or "products in IE/FR" → call search_products ONCE with the relevant filters. Done. Only call get_product_detail if the user asks for full detail on a specific product.
+3. "Products containing X" or "products in IE/FR" or filtered product lists → call search_products ONCE with the relevant filters. Done. Only call get_product_detail if the user asks for full detail on a specific product.
 
-4. "Company portfolio / products registered to company X" → call get_company_profile(name) ONCE. Done.
+4. "Company portfolio / products registered to company X / which substances does company X sell" → call get_company_profile(name) ONCE. Done. Do NOT use search_products for company portfolio questions.
 
 5. "Search for X" when the entity type is unknown → call search ONCE. Done.
 
-6. Raw table exploration (ONLY when questions 1-5 cannot answer it) → call explore_schema first, then explore_table. Never call explore_table without first calling explore_schema on that table.
+6. Raw table exploration (ONLY when questions 1-5 cannot answer it) → call list_tables, then explore_schema, then explore_table. Never call explore_table without first calling explore_schema on that table.
 
-CRITICAL: Most questions require exactly ONE tool call. Do not chain tools unless the question explicitly requires data from multiple sources. Never call get_substance_profile before check_mrl_compliance — check_mrl_compliance resolves the substance internally.
+CRITICAL: Prefer exactly ONE tool call. Only chain tools when the question explicitly needs data from multiple sources or multiple named entities. Never call get_substance_profile before check_mrl_compliance — check_mrl_compliance resolves the substance internally.
 
 DATA CONTEXT:
 - EU status "Approved" does not mean currently valid — always check expiry_dt.
@@ -55,21 +56,19 @@ DATA CONTEXT:
 - MRL values marked with * are set at the limit of determination (LOD) — effectively "none detected".
 - This data is not legally authoritative.`;
 
-async function apiFetch(path: string) {
-  const api = (env as any).API as Fetcher;
-  const apiKey = (env as any).API_KEY as string;
-  const res = await api.fetch(`https://internal${path}`, {
-    headers: { "x-api-key": apiKey },
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`API ${res.status}: ${text.slice(0, 300)}`);
-  }
-  const data = await res.json();
+function getClient() {
+  return createApiClient(env.API, env.API_KEY);
+}
+
+/** Keep large tool payloads inside model context without corrupting JSON. */
+function maybeTruncate(data: unknown): unknown {
   const json = JSON.stringify(data);
-  return json.length > 15000
-    ? JSON.parse(json.slice(0, 15000) + "}")
-    : data;
+  if (json.length <= 15000) return data;
+  return {
+    truncated: true,
+    note: "Response truncated to fit model context. Narrow the question or request a specific section.",
+    preview: json.slice(0, 15000),
+  };
 }
 
 export const Route = createFileRoute("/api/chat")({
@@ -80,7 +79,7 @@ export const Route = createFileRoute("/api/chat")({
           await request.json();
 
         const openrouter = createOpenRouter({
-          apiKey: (env as any).OPENROUTER_API_KEY as string,
+          apiKey: env.OPENROUTER_API_KEY,
         });
 
         const result = streamText({
@@ -111,9 +110,10 @@ export const Route = createFileRoute("/api/chat")({
                   .describe("Max results, default 20"),
               }),
               execute: async ({ query, limit }) => {
-                const params = new URLSearchParams({ query });
-                if (limit) params.set("limit", String(limit));
-                return apiFetch(`/api/search?${params}`);
+                const client = getClient();
+                return maybeTruncate(
+                  await client.paletteSearch(query, limit ?? 20),
+                );
               },
             }),
 
@@ -127,7 +127,8 @@ export const Route = createFileRoute("/api/chat")({
                 "One call returns a 13-table cross-tier join. " +
                 "USE FOR: substance overview, approval status, tox values, which products contain it. " +
                 "DO NOT USE FOR: MRL lookup — use check_mrl_compliance instead. " +
-                "DO NOT call search first — pass the substance name directly as the identifier.",
+                "DO NOT USE FOR: company portfolios — use get_company_profile instead. " +
+                "Pass the substance name or CAS directly as the identifier.",
               inputSchema: z.object({
                 identifier: z
                   .string()
@@ -136,8 +137,9 @@ export const Route = createFileRoute("/api/chat")({
                   ),
               }),
               execute: async ({ identifier }) => {
-                return apiFetch(
-                  `/api/substances/${encodeURIComponent(identifier)}`,
+                const client = getClient();
+                return maybeTruncate(
+                  await client.getSubstanceProfile(identifier),
                 );
               },
             }),
@@ -146,9 +148,10 @@ export const Route = createFileRoute("/api/chat")({
               description:
                 "Search commercial crop protection products across Ireland (IE) and France (FR). " +
                 "Returns: product name, country, authorization holder, active substances, status. " +
-                "USE FOR: 'what products contain substance X', 'products registered by company Y', " +
-                "'products available in IE/FR'. " +
-                "Filter by substance name, company name, or country. Combine filters freely. " +
+                "USE FOR: 'what products contain substance X', 'products available in IE/FR', " +
+                "product name lookup. " +
+                "Filter by substance name, product keyword, or country. Combine filters freely. " +
+                "DO NOT USE FOR: company portfolio / which substances a company sells — use get_company_profile. " +
                 "Returns summary list — call get_product_detail only if the user needs full detail on a specific product.",
               inputSchema: z.object({
                 query: z
@@ -166,18 +169,30 @@ export const Route = createFileRoute("/api/chat")({
                 company: z
                   .string()
                   .optional()
-                  .describe("Filter by authorization holder name"),
+                  .describe(
+                    "Filter by authorization holder name (mapped to auth_holder)",
+                  ),
                 limit: z
                   .number()
                   .optional()
                   .describe("Max results, default 20"),
               }),
-              execute: async (params) => {
-                const qs = new URLSearchParams();
-                for (const [k, v] of Object.entries(params)) {
-                  if (v != null) qs.set(k, String(v));
-                }
-                return apiFetch(`/api/products?${qs}`);
+              execute: async ({
+                query,
+                country,
+                substance,
+                company,
+                limit,
+              }) => {
+                const client = getClient();
+                const params: ProductSearchParams = {
+                  q: query,
+                  country,
+                  substance,
+                  auth_holder: company,
+                  limit: limit ?? 20,
+                };
+                return maybeTruncate(await client.searchProducts(params));
               },
             }),
 
@@ -201,7 +216,10 @@ export const Route = createFileRoute("/api/chat")({
                   ),
               }),
               execute: async ({ country, id }) => {
-                return apiFetch(`/api/products/${country}/${id}`);
+                const client = getClient();
+                return maybeTruncate(
+                  await client.getProductDetail(country, id),
+                );
               },
             }),
 
@@ -211,7 +229,7 @@ export const Route = createFileRoute("/api/chat")({
                 "Returns: all registered products by country, active substance list, " +
                 "function breakdown (fungicide/herbicide/insecticide counts). " +
                 "USE FOR: 'what products does company X have', 'Life Scientific portfolio', " +
-                "'which substances does company X sell'. " +
+                "'which substances does company X sell', 'products registered to company X'. " +
                 "Pass the company name exactly as it appears in search results. " +
                 "DO NOT call search_products to answer portfolio questions — this tool is faster and more complete.",
               inputSchema: z.object({
@@ -222,9 +240,8 @@ export const Route = createFileRoute("/api/chat")({
                   ),
               }),
               execute: async ({ name }) => {
-                return apiFetch(
-                  `/api/companies/${encodeURIComponent(name)}`,
-                );
+                const client = getClient();
+                return maybeTruncate(await client.getCompanyProfile(name));
               },
             }),
 
@@ -260,13 +277,28 @@ export const Route = createFileRoute("/api/chat")({
                 commodity,
                 concentration,
               }) => {
-                const params = new URLSearchParams({
-                  substance,
-                  commodity,
-                });
-                if (concentration != null)
-                  params.set("concentration", String(concentration));
-                return apiFetch(`/api/mrls/check?${params}`);
+                const client = getClient();
+                return maybeTruncate(
+                  await client.checkMrlCompliance({
+                    substance,
+                    commodity,
+                    value: concentration,
+                  }),
+                );
+              },
+            }),
+
+            list_tables: tool({
+              description:
+                "List all whitelisted database tables. Call this FIRST when exploring raw data. " +
+                "Tables are prefixed by source: eu_ (EU regulatory), fr_ (France), " +
+                "ie_ (Ireland), oft_ (EFSA OpenFoodTox), countries. After listing, " +
+                "call explore_schema on a table to see its columns before querying. " +
+                "USE ONLY when dedicated tools cannot answer the question.",
+              inputSchema: z.object({}),
+              execute: async () => {
+                const client = getClient();
+                return maybeTruncate(await client.listTables());
               },
             }),
 
@@ -286,8 +318,9 @@ export const Route = createFileRoute("/api/chat")({
                   ),
               }),
               execute: async ({ table_name }) => {
-                return apiFetch(
-                  `/api/tables/${encodeURIComponent(table_name)}/schema`,
+                const client = getClient();
+                return maybeTruncate(
+                  await client.exploreSchema(table_name),
                 );
               },
             }),
@@ -296,8 +329,10 @@ export const Route = createFileRoute("/api/chat")({
               description:
                 "Query any of the 32 database tables with dynamic filters. " +
                 "REQUIRES explore_schema to be called first on this table — never guess column names. " +
-                "Supports Django-style filter operators: __eq, __neq, __lt, __lte, __gt, __gte, __ilike, __like, __in. " +
-                'Example: {"etat_autorisation__eq": "Autorisé", "date_decision__gt": "2020-01-01"}. ' +
+                "Filter keys are column names, optionally suffixed with operators: " +
+                "__lt, __gt, __lte, __gte, __ne, __like, __ilike, __in. " +
+                "Bare column key means equality. " +
+                'Example: {"status": "Approved", "expiry_dt__lt": "2027-01-01"}. ' +
                 "Returns max 100 rows. Narrow with filters rather than large limits. " +
                 "USE ONLY for questions that the dedicated tools (get_substance_profile, search_products, " +
                 "get_company_profile, check_mrl_compliance) cannot answer.",
@@ -309,7 +344,7 @@ export const Route = createFileRoute("/api/chat")({
                   .record(z.string(), z.string())
                   .optional()
                   .describe(
-                    'Column filters with Django-style operators, e.g. {"status__eq": "Approved"}',
+                    'Column filters, e.g. {"status": "Approved", "expiry_dt__lt": "2027-01-01"}',
                   ),
                 limit: z
                   .number()
@@ -328,16 +363,14 @@ export const Route = createFileRoute("/api/chat")({
                 limit,
                 offset,
               }) => {
-                const params = new URLSearchParams();
-                if (limit) params.set("limit", String(limit));
-                if (offset) params.set("offset", String(offset));
-                if (filters) {
-                  for (const [k, v] of Object.entries(filters)) {
-                    params.set(k, v);
-                  }
-                }
-                return apiFetch(
-                  `/api/tables/${encodeURIComponent(table_name)}?${params}`,
+                const client = getClient();
+                return maybeTruncate(
+                  await client.exploreTable({
+                    tableName: table_name,
+                    filters,
+                    limit: limit ?? 20,
+                    offset,
+                  }),
                 );
               },
             }),
