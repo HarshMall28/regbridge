@@ -53,6 +53,16 @@ const ROOT_CSS = `
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; flex-shrink: 0; position: relative;
   background: transparent; border: none; padding: 0;
+  transition: background 0.15s ease, color 0.15s ease;
+  color: #16a34a;
+}
+.rb-stop-btn.send-on {
+  background: #16a34a;
+  color: #fff;
+}
+.rb-stop-btn.send-off {
+  color: #c4c4c4;
+  cursor: default;
 }
 .rb-stop-arc {
   position: absolute; inset: 0; border-radius: 50%;
@@ -65,8 +75,6 @@ const ROOT_CSS = `
   width: 8px; height: 8px; border-radius: 2px;
   background: #16a34a; flex-shrink: 0;
 }
-.rb-stop-btn.idle .rb-stop-arc { display: none; }
-.rb-stop-btn.idle .rb-stop-sq  { background: #ccc; }
 .rb-answer-panel {
   position: fixed; top: 96px; left: 0; right: 0; bottom: 0;
   overflow-y: auto; z-index: 35;
@@ -242,6 +250,15 @@ function DesktopAiLayer({
     setFollowUp("");
   }
 
+  function submitFollowUp() {
+    if (!followUp.trim() || isBusy) return;
+    sendMessage({ text: followUp.trim() });
+    setFollowUp("");
+  }
+
+  const canSendFollowUp =
+    !isBusy && status === "ready" && followUp.trim().length > 0;
+
   function handleLinkClick(e: React.MouseEvent) {
     const t = e.target as HTMLAnchorElement;
     if (
@@ -286,20 +303,40 @@ function DesktopAiLayer({
             AI
           </span>
 
-          {/* Stop / idle indicator */}
-          <button
-            className={`rb-stop-btn ${isBusy ? "" : "idle"}`}
-            onClick={() => {
-              if (isBusy) stop();
-            }}
-            title={isBusy ? "Stop generation" : "Done"}
-            aria-label={
-              isBusy ? "Stop generation" : "Generation complete"
-            }
-          >
-            {isBusy && <span className="rb-stop-arc" />}
-            <span className="rb-stop-sq" />
-          </button>
+          {/* Send when typing · stop while streaming · disabled send when idle */}
+          {isBusy ? (
+            <button
+              className="rb-stop-btn"
+              onClick={() => {
+                void stop();
+              }}
+              title="Stop generation"
+              aria-label="Stop generation"
+            >
+              <span className="rb-stop-arc" />
+              <span className="rb-stop-sq" />
+            </button>
+          ) : (
+            <button
+              className={`rb-stop-btn ${canSendFollowUp ? "send-on" : "send-off"}`}
+              onClick={canSendFollowUp ? submitFollowUp : undefined}
+              disabled={!canSendFollowUp}
+              title="Send"
+              aria-label={
+                canSendFollowUp ? "Send" : "Send (disabled)"
+              }
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                <path d="M3.4 20.4l17.45-7.48a1 1 0 000-1.84L3.4 3.6a.993.993 0 00-1.39.91L2 9.12c0 .5.37.93.87.99L17 12 2.87 13.88c-.5.07-.87.5-.87 1l.01 4.61c0 .71.73 1.2 1.39.91z" />
+              </svg>
+            </button>
+          )}
 
           <button
             onClick={onNewSearch}

@@ -129,7 +129,33 @@ const CSS = `
 }
 .rb-mob-pill.ai { border-color:rgba(22,163,74,.4); }
 
-/* ── stop button ── */
+/* ── action button: send / stop / disabled send ── */
+.rb-action {
+  width:28px; height:28px; border-radius:50%;
+  display:flex; align-items:center; justify-content:center;
+  cursor:pointer; flex-shrink:0; position:relative;
+  background:transparent; border:none; padding:0;
+  transition:background .15s ease, color .15s ease, opacity .15s ease;
+}
+.rb-action.send-on {
+  background:#16a34a; color:#fff;
+}
+.rb-action.send-on:active { background:#15803d; }
+.rb-action.send-off {
+  color:#c4c4c4; cursor:default;
+}
+.rb-action.stop {
+  background:transparent; color:#16a34a;
+}
+.rb-action-arc {
+  position:absolute; inset:0; border-radius:50%;
+  border:2px solid transparent;
+  border-top-color:#16a34a; border-right-color:#16a34a;
+  animation:spin-arc .8s linear infinite;
+}
+.rb-action-sq { width:7px; height:7px; border-radius:1.5px; background:#16a34a; }
+
+/* legacy stop (desktop omnibar still uses these class names via ROOT_CSS) */
 .rb-stop {
   width:26px; height:26px; border-radius:50%;
   display:flex; align-items:center; justify-content:center;
@@ -276,6 +302,13 @@ export function CommandPalette({ open, onClose, onAiSubmit }: Props) {
       mobMode !== "followup" &&
       query.length >= 2) ||
     (mode === "llm" && !hasChat && query.trim().length >= 5);
+
+  /* Mobile action button: send when AI-ready, stop while streaming, else disabled send */
+  const canSendAi =
+    !isBusy &&
+    status === "ready" &&
+    ((mobMode === "followup" && query.trim().length > 0) ||
+      (mode === "llm" && query.trim().length >= 5));
 
   const [debouncedQuery, setDebouncedQuery] = useState("");
   useEffect(() => {
@@ -803,7 +836,7 @@ export function CommandPalette({ open, onClose, onAiSubmit }: Props) {
             <input
               ref={mobInputRef}
               type="search"
-              enterKeyHint="search"
+              enterKeyHint={canSendAi ? "send" : "search"}
               inputMode="search"
               autoCapitalize="off"
               autoCorrect="off"
@@ -813,6 +846,7 @@ export function CommandPalette({ open, onClose, onAiSubmit }: Props) {
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
+                  if (isBusy) return;
                   handleMobSubmit();
                 }
               }}
@@ -832,25 +866,12 @@ export function CommandPalette({ open, onClose, onAiSubmit }: Props) {
                 transition: "color .2s",
               }}
             />
-            {isBusy ? (
-              <button
-                className="rb-stop"
-                onClick={stop}
-                title="Stop generation"
-                aria-label="Stop generation"
-              >
-                <span className="rb-stop-arc" />
-                <span className="rb-stop-sq" />
-              </button>
-            ) : snakeOn || hasChat ? (
-              <button
-                className="rb-stop idle"
-                aria-label="Generation complete"
-                title="Done"
-              >
-                <span className="rb-stop-sq" />
-              </button>
-            ) : null}
+            <MobActionButton
+              isBusy={isBusy}
+              canSend={canSendAi}
+              onSend={handleMobSubmit}
+              onStop={stop}
+            />
           </div>
         </div>
       </div>
@@ -1086,6 +1107,75 @@ function Empty({ children }: { children: React.ReactNode }) {
 }
 
 /* ── icons ── */
+function SendIcon({ size = 15 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <path d="M3.4 20.4l17.45-7.48a1 1 0 000-1.84L3.4 3.6a.993.993 0 00-1.39.91L2 9.12c0 .5.37.93.87.99L17 12 2.87 13.88c-.5.07-.87.5-.87 1l.01 4.61c0 .71.73 1.2 1.39.91z" />
+    </svg>
+  );
+}
+
+function MobActionButton({
+  isBusy,
+  canSend,
+  onSend,
+  onStop,
+}: {
+  isBusy: boolean;
+  canSend: boolean;
+  onSend: () => void;
+  onStop: () => void | Promise<void>;
+}) {
+  if (isBusy) {
+    return (
+      <button
+        type="button"
+        className="rb-action stop"
+        onClick={() => {
+          void onStop();
+        }}
+        title="Stop generation"
+        aria-label="Stop generation"
+      >
+        <span className="rb-action-arc" />
+        <span className="rb-action-sq" />
+      </button>
+    );
+  }
+
+  if (canSend) {
+    return (
+      <button
+        type="button"
+        className="rb-action send-on"
+        onClick={onSend}
+        title="Send"
+        aria-label="Send"
+      >
+        <SendIcon />
+      </button>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      className="rb-action send-off"
+      disabled
+      title="Send"
+      aria-label="Send (disabled)"
+    >
+      <SendIcon />
+    </button>
+  );
+}
+
 function SearchIcon({ size = 17 }: { size?: number }) {
   return (
     <svg
