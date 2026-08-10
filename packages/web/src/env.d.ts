@@ -1,12 +1,11 @@
-// Augment Wrangler-generated Cloudflare.Env from worker-configuration.d.ts.
-// Must use `declare global` so this merges with the generated Env
-// ({ API, API_KEY }) instead of creating a separate module-local namespace.
-declare global {
-  namespace Cloudflare {
-    interface Env {
-      OPENROUTER_API_KEY: string;
-    }
-  }
+// Manual ambient types for `import { env } from "cloudflare:workers"`.
+// This project relies on this file (not worker-configuration.d.ts) for the
+// module — keep secrets/bindings listed here so IDE + tsc resolve them.
+declare module "cloudflare:workers" {
+  const env: {
+    API: Fetcher;
+    API_KEY: string;
+    OPENROUTER_API_KEY: string;
+  };
+  export { env };
 }
-
-export {};

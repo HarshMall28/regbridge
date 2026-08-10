@@ -6,10 +6,9 @@ import type {
   ProductSearchParams,
   MrlCheckParams,
 } from "@regbridge/api-client";
-import type { Fetcher } from "@cloudflare/workers-types";
 
 function getClient() {
-  return createApiClient(env.API as unknown as Fetcher, env.API_KEY);
+  return createApiClient(env.API, env.API_KEY);
 }
 
 // ---------------------------------------------------------------------------
