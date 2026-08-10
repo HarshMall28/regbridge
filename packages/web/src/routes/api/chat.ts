@@ -12,6 +12,7 @@ import { z } from "zod";
 import { env } from "cloudflare:workers";
 import { createApiClient } from "@regbridge/api-client";
 import type { ProductSearchParams } from "@regbridge/api-client";
+import type { Fetcher } from "@cloudflare/workers-types";
 
 const SYSTEM_PROMPT = `You are a regulatory intelligence analyst for EU crop protection data. You have access to RegBridge — 32 tables covering EU substance approvals, EFSA toxicology, and national product registers for Ireland and France.
 
@@ -57,7 +58,7 @@ DATA CONTEXT:
 - This data is not legally authoritative.`;
 
 function getClient() {
-  return createApiClient(env.API, env.API_KEY);
+  return createApiClient(env.API as unknown as Fetcher, env.API_KEY);
 }
 
 /** Keep large tool payloads inside model context without corrupting JSON. */
