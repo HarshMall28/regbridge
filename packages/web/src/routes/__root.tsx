@@ -199,7 +199,10 @@ function RootInner() {
         />
       )}
 
-      <Outlet />
+      {/* Mobile bottom search bar clearance */}
+      <div className="pb-[88px] sm:pb-0">
+        <Outlet />
+      </div>
       <FloatingFooter />
 
       <CommandPalette
@@ -440,91 +443,62 @@ function RootDocument({
   );
 }
 
-/* ─── Top bar (unchanged logic) ─── */
+/* ─── Top bar ─── */
 function TopBar() {
   const { setOpen } = usePalette();
-  const [dismissed, setDismissed] = useState(false);
 
   return (
-    <>
-      {!dismissed && (
-        <div className="block lg:hidden bg-brand/10 border-b border-brand/20 px-4 py-2 text-center text-xs text-txt-secondary">
-          <span>For the full ⌘K experience, open on desktop</span>
-          <button
-            onClick={() => setDismissed(true)}
-            className="ml-3 text-txt-tertiary hover:text-txt-primary"
-          >
-            ✕
-          </button>
-        </div>
-      )}
-      <header className="sticky top-0 z-30 border-b border-border bg-surface-card">
-        <div className="max-w-7xl mx-auto flex items-center justify-between px-5 py-2.5">
+    <header className="sticky top-0 z-30 border-b border-border bg-surface-card">
+      <div className="max-w-7xl mx-auto flex items-center justify-between px-5 py-2.5">
+        <Link
+          to="/"
+          className="text-brand font-bold text-lg tracking-tight"
+        >
+          LS
+        </Link>
+        {/* Desktop only — mobile uses the always-on bottom search bar */}
+        <button
+          onClick={() => setOpen(true)}
+          className="hidden lg:flex absolute left-1/2 -translate-x-1/2 items-center gap-1.5 text-txt-tertiary hover:text-txt-secondary transition-colors text-sm"
+          aria-label="Open search"
+        >
+          <kbd className="kbd">Ctrl</kbd>
+          <span className="text-txt-tertiary">/</span>
+          <kbd className="kbd">⌘</kbd>
+          <kbd className="kbd">K</kbd>
+        </button>
+        <nav className="flex items-center gap-4 sm:gap-6 text-xs sm:text-sm">
           <Link
             to="/"
-            className="text-brand font-bold text-lg tracking-tight"
+            activeProps={{ className: "text-brand font-medium" }}
+            inactiveProps={{
+              className: "text-txt-secondary hover:text-txt-primary",
+            }}
           >
-            LS
+            Explorer
           </Link>
-          <button
-            onClick={() => setOpen(true)}
-            className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1.5 text-txt-tertiary hover:text-txt-secondary transition-colors text-sm"
+          <Link
+            to="/mcp"
+            activeProps={{ className: "text-brand font-medium" }}
+            inactiveProps={{
+              className: "text-txt-secondary hover:text-txt-primary",
+            }}
           >
-            <svg
-              className="w-5 h-5 lg:hidden"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z"
-              />
-            </svg>
-            <span className="hidden lg:flex items-center gap-1">
-              <kbd className="kbd">Ctrl</kbd>
-              <span className="text-txt-tertiary">/</span>
-              <kbd className="kbd">⌘</kbd>
-              <kbd className="kbd">K</kbd>
-            </span>
-          </button>
-          <nav className="flex items-center gap-4 sm:gap-6 text-xs sm:text-sm">
-            <Link
-              to="/"
-              activeProps={{ className: "text-brand font-medium" }}
-              inactiveProps={{
-                className:
-                  "text-txt-secondary hover:text-txt-primary",
-              }}
-            >
-              Explorer
-            </Link>
-            <Link
-              to="/mcp"
-              activeProps={{ className: "text-brand font-medium" }}
-              inactiveProps={{
-                className:
-                  "text-txt-secondary hover:text-txt-primary",
-              }}
-            >
-              MCP
-            </Link>
-            <Link
-              to="/architecture"
-              activeProps={{ className: "text-brand font-medium" }}
-              inactiveProps={{
-                className:
-                  "text-txt-secondary hover:text-txt-primary whitespace-nowrap",
-              }}
-            >
-              Architecture
-            </Link>
-          </nav>
-        </div>
-      </header>
-    </>
+            MCP
+          </Link>
+          <Link
+            to="/architecture"
+            activeProps={{ className: "text-brand font-medium" }}
+            inactiveProps={{
+              className:
+                "text-txt-secondary hover:text-txt-primary whitespace-nowrap",
+            }}
+          >
+            Architecture
+          </Link>
+        </nav>
+      </div>
+    </header>
   );
 }
 

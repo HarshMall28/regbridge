@@ -19,7 +19,7 @@ const STATS = [
 ];
 
 function HomePage() {
-  const { setOpen } = usePalette();
+  const { setOpen, requestFocusSearch } = usePalette();
 
   return (
     <main className="flex flex-col items-center justify-center min-h-[calc(100vh-49px)] px-4">
@@ -40,9 +40,18 @@ function HomePage() {
         ))}
       </div>
 
-      {/* ⌘K hero */}
+      {/* ⌘K hero — desktop opens palette; mobile focuses bottom search */}
       <button
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          if (
+            typeof window !== "undefined" &&
+            window.matchMedia("(max-width: 639px)").matches
+          ) {
+            requestFocusSearch();
+          } else {
+            setOpen(true);
+          }
+        }}
         className="flex items-center gap-2 mb-4 group cursor-pointer"
       >
         <kbd className="inline-flex items-center justify-center w-10 h-10 rounded-lg bg-surface-hover border border-border-strong text-base font-mono font-medium text-txt-primary group-hover:border-brand transition-colors">
@@ -58,7 +67,8 @@ function HomePage() {
           Press to search substances, products, or companies
         </span>
         <span className="sm:hidden">
-          Tap to search substances, products, or companies
+          Use the search bar below for substances, products, or
+          companies
         </span>
       </p>
 

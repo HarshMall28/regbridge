@@ -34,6 +34,10 @@ export interface PaletteCtx {
   hasChat: boolean;
   isBusy: boolean;
 
+  /* bump to focus the always-on mobile search input */
+  focusSearchNonce: number;
+  requestFocusSearch: () => void;
+
   /* reset everything */
   resetAi: () => void;
 }
@@ -53,6 +57,8 @@ export const PaletteContext = createContext<PaletteCtx>({
   setMessages: () => {},
   hasChat: false,
   isBusy: false,
+  focusSearchNonce: 0,
+  requestFocusSearch: () => {},
   resetAi: () => {},
 });
 
@@ -68,11 +74,16 @@ export function PaletteProvider({
 }): ReactElement {
   const [open, setOpen] = useState(false);
   const [aiMode, setAiMode] = useState(false);
+  const [focusSearchNonce, setFocusSearchNonce] = useState(0);
 
   const { messages, sendMessage, stop, status, setMessages } =
     useChat({
       transport: new DefaultChatTransport({ api: "/api/chat" }),
     });
+
+  const requestFocusSearch = useCallback(() => {
+    setFocusSearchNonce((n) => n + 1);
+  }, []);
 
   const hasChat = messages.length > 0;
 
@@ -163,6 +174,8 @@ export function PaletteProvider({
         setMessages,
         hasChat,
         isBusy,
+        focusSearchNonce,
+        requestFocusSearch,
         resetAi,
       }}
     >
