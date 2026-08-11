@@ -347,6 +347,310 @@ DATA CONTEXT:
       ],
     }),
   );
+  server.registerTool(
+    "aggregate",
+    {
+      description:
+        "Generic cross-table aggregation query. Executes a single SQL query with " +
+        "optional JOIN, WHERE, GROUP BY, HAVING, and ORDER BY — returning computed " +
+        "results in one call instead of multiple explore_table calls.\n\n" +
+        "USE FOR:\n" +
+        "- Gap analysis: EU-approved substances with zero IE or FR products\n" +
+        "- Market density: count of distinct auth holders per substance\n" +
+        "- Expiry risk: substances expiring within N months with product counts\n" +
+        "- Portfolio coverage: which function categories a company covers\n" +
+        "- Any question requiring COUNT, COUNT_DISTINCT, SUM, AVG, MIN, MAX across tables\n\n" +
+        "SECURITY: Only these tables are allowed:\n" +
+        "eu_active_substances, eu_substance_categories, eu_country_authorizations,\n" +
+        "eu_substance_group_members, eu_commodities,\n" +
+        "ie_products, ie_product_substances, ie_product_crops,\n" +
+        "fr_products, fr_product_substances, fr_substances,\n" +
+        "fr_authorized_uses, fr_all_uses, fr_hazard_classes,\n" +
+        "fr_conditions_of_use, fr_risk_phrases\n\n" +
+        "COLUMN NAMES: All column references are validated against live schema. " +
+        "Call explore_schema first if unsure of column names. Unknown columns → 400 error.\n\n" +
+        "JOIN TOPOLOGY (the correct bridge tables):\n" +
+        "- EU substances → IE products: join ie_product_substances on " +
+        "  eu_active_substances.name = ie_product_substances.substance_name, " +
+        "  then optionally join ie_products on ie_product_substances.product_id = ie_products.product_id\n" +
+        "- EU substances → FR products: join fr_product_substances on " +
+        "  eu_active_substances.name = fr_product_substances.substance_name\n" +
+        "- Single join only. For 3-table queries, use two aggregate calls or explore_table.\n\n" +
+        "HARD LIMIT: 100 rows regardless of what you pass.",
+      inputSchema: z.object({
+        from: z
+          .string()
+          .describe(
+            "Base table name. Must be in the allowed whitelist above.",
+          ),
+        where: z
+          .array(
+            z.object({
+              column: z
+                .string()
+                .describe(
+                  "Column name, optionally table-prefixed as 'table.column'",
+                ),
+              op: z
+                .enum([
+                  "eq",
+                  "neq",
+                  "lt",
+                  "lte",
+                  "gt",
+                  "gte",
+                  "ilike",
+                  "like",
+                  "in",
+                  "is_null",
+                  "not_null",
+                ])
+                .describe("Filter operator"),
+              value: z
+                .union([
+                  z.string(),
+                  z.number(),
+                  z.boolean(),
+                  z.array(z.string()),
+                ])
+                .optional()
+                .describe(
+                  "Filter value. Omit for is_null/not_null. Array for 'in'.",
+                ),
+            }),
+          )
+          .optional()
+          .describe("Row-level filters (WHERE clause)"),
+        join: z
+          .object({
+            table: z
+              .string()
+              .describe("Table to join — must be in whitelist"),
+            type: z.enum(["left", "inner"]),
+            on: z.object({
+              from_column: z
+                .string()
+                .describe("Column in the `from` table"),
+              to_column: z
+                .string()
+                .describe("Column in the joined table"),
+            }),
+          })
+          .optional()
+          .describe("Single table join"),
+        select: z
+          .array(
+            z.object({
+              column: z
+                .string()
+                .describe(
+                  "Column to select, optionally table-prefixed",
+                ),
+              alias: z.string().optional().describe("Output alias"),
+            }),
+          )
+          .optional()
+          .describe("Columns to include in output"),
+        aggregate: z
+          .array(
+            z.object({
+              fn: z
+                .enum([
+                  "count",
+                  "count_distinct",
+                  "sum",
+                  "avg",
+                  "min",
+                  "max",
+                ])
+                .describe("Aggregation function"),
+              column: z
+                .string()
+                .describe(
+                  "Column to aggregate. Use '*' for count(*)",
+                ),
+              alias: z
+                .string()
+                .describe(
+                  "Required output alias — used in having and order_by",
+                ),
+            }),
+          )
+          .optional()
+          .describe("Aggregation functions — activates GROUP BY"),
+        group_by: z
+          .array(z.string())
+          .optional()
+          .describe(
+            "Columns to group by. Required when aggregate is present.",
+          ),
+        having: z
+          .array(
+            z.object({
+              alias: z
+                .string()
+                .describe("Aggregate alias to filter on"),
+              op: z.enum(["eq", "neq", "lt", "lte", "gt", "gte"]),
+              value: z.number().describe("Numeric threshold"),
+            }),
+          )
+          .optional()
+          .describe(
+            "Post-aggregation filter on aggregate values (HAVING)",
+          ),
+        order_by: z
+          .array(
+            z.object({
+              column: z
+                .string()
+                .describe("Column name or aggregate alias"),
+              direction: z.enum(["asc", "desc"]),
+            }),
+          )
+          .optional()
+          .describe("Sort order"),
+        limit: z
+          .number()
+          .min(1)
+          .max(100)
+          .optional()
+          .describe("Max rows. Hard capped at 100."),
+      }),
+    },
+    async (args) => ({
+      content: [
+        {
+          type: "text" as const,
+          text: JSON.stringify(await client.aggregate(args as any)),
+        },
+      ],
+    }),
+  );
+
+  server.registerTool(
+    "gap_analysis",
+    {
+      description:
+        "Find EU-approved substances with zero or few products registered in Ireland or France. " +
+        "USE FOR: 'which substances have no IE products', 'gap analysis', 'zero coverage in IE/FR', " +
+        "'which approved substances have no generic alternatives'. " +
+        "Returns substance name, expiry date, candidate-for-substitution flag, and product count.",
+      inputSchema: z.object({
+        market: z
+          .enum(["ie", "fr"])
+          .describe("Which market to check"),
+        expiry_before: z
+          .string()
+          .optional()
+          .describe(
+            "Only substances expiring before this date e.g. '2027-01-01'",
+          ),
+        expiry_after: z
+          .string()
+          .optional()
+          .describe("Lower bound on expiry date"),
+        max_products: z
+          .number()
+          .optional()
+          .describe(
+            "Max product count. Default 0 = zero products only.",
+          ),
+        status: z
+          .string()
+          .optional()
+          .describe("EU approval status. Default 'Approved'."),
+        limit: z.number().optional().describe("Max rows, default 50"),
+      }),
+    },
+    async (args) => ({
+      content: [
+        {
+          type: "text" as const,
+          text: JSON.stringify(await client.gapAnalysis(args)),
+        },
+      ],
+    }),
+  );
+
+  server.registerTool(
+    "market_density",
+    {
+      description:
+        "Count products per substance in IE or FR — reveals competitive saturation. " +
+        "USE FOR: 'most registered substances', 'competitive landscape', " +
+        "'how many products per substance', 'dominant substances'. " +
+        "Returns substance name and product count sorted by count descending.",
+      inputSchema: z.object({
+        market: z
+          .enum(["ie", "fr"])
+          .describe("Which market to analyse"),
+        min_products: z
+          .number()
+          .optional()
+          .describe(
+            "Only substances with at least this many products",
+          ),
+        max_products: z
+          .number()
+          .optional()
+          .describe(
+            "Only substances with at most this many products",
+          ),
+        limit: z.number().optional().describe("Max rows, default 50"),
+      }),
+    },
+    async (args) => ({
+      content: [
+        {
+          type: "text" as const,
+          text: JSON.stringify(await client.marketDensity(args)),
+        },
+      ],
+    }),
+  );
+
+  server.registerTool(
+    "expiry_risk",
+    {
+      description:
+        "Find EU-approved substances expiring soon with low IE/FR product coverage. " +
+        "USE FOR: 'expiry risk', 'substances expiring in next X months', " +
+        "'renewal pipeline', 'expiring with few products', 'at risk substances'. " +
+        "Returns substance, expiry date, CfS flag, rapporteur, and product count.",
+      inputSchema: z.object({
+        expiry_before: z
+          .string()
+          .describe(
+            "Substances expiring before this date e.g. '2027-01-01'",
+          ),
+        expiry_after: z
+          .string()
+          .optional()
+          .describe("Lower bound on expiry date"),
+        market: z
+          .enum(["ie", "fr"])
+          .optional()
+          .describe("Market to check coverage. Default 'ie'."),
+        max_products: z
+          .number()
+          .optional()
+          .describe("Max product count threshold. Default 5."),
+        cfs_only: z
+          .boolean()
+          .optional()
+          .describe("Only candidate-for-substitution substances"),
+        limit: z.number().optional(),
+      }),
+    },
+    async (args) => ({
+      content: [
+        {
+          type: "text" as const,
+          text: JSON.stringify(await client.expiryRisk(args)),
+        },
+      ],
+    }),
+  );
 
   return server;
 }

@@ -68,3 +68,14 @@ export {
   listTables,
 } from "./queries/explore-queries";
 export { checkMrlCompliance } from "./queries/mrl-compliance";
+
+export {
+  runAggregate,
+  AggregateValidationError,
+  type AggregateParams,
+  type AggregateResult,
+} from "./queries/aggregate.js";
+
+export { substanceGapAnalysis } from "./queries/gap-analysis.js";
+export { marketDensity } from "./queries/market-density.js";
+export { expiryRiskScan } from "./queries/expiry-risk.js";

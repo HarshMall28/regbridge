@@ -15,31 +15,27 @@ import { DefaultChatTransport } from "ai";
    Types
    ───────────────────────────────────────────────────────────── */
 export interface PaletteCtx {
-  /* palette open/close */
   open: boolean;
   setOpen: (v: boolean | ((prev: boolean) => boolean)) => void;
-
-  /* AI answer page state (desktop: omnibar + page panel) */
   aiMode: boolean;
   setAiMode: (v: boolean) => void;
-
-  /* useChat surface — single instance shared across desktop + mobile */
   messages: ReturnType<typeof useChat>["messages"];
   sendMessage: ReturnType<typeof useChat>["sendMessage"];
   stop: () => Promise<void>;
   status: ReturnType<typeof useChat>["status"];
   setMessages: ReturnType<typeof useChat>["setMessages"];
-
-  /* convenience */
   hasChat: boolean;
   isBusy: boolean;
-
-  /* reset everything */
   resetAi: () => void;
+  focusSearchNonce: number;
+  requestFocusSearch: () => void;
+  /* new: pre-fill palette with a query and auto-submit */
+  initialQuery: string;
+  setInitialQuery: (q: string) => void;
 }
 
 /* ─────────────────────────────────────────────────────────────
-   Context (default is a no-op shell — real value comes from Provider)
+   Context
    ───────────────────────────────────────────────────────────── */
 export const PaletteContext = createContext<PaletteCtx>({
   open: false,
@@ -54,12 +50,16 @@ export const PaletteContext = createContext<PaletteCtx>({
   hasChat: false,
   isBusy: false,
   resetAi: () => {},
+  focusSearchNonce: 0,
+  requestFocusSearch: () => {},
+  initialQuery: "",
+  setInitialQuery: () => {},
 });
 
 export const usePalette = () => useContext(PaletteContext);
 
 /* ─────────────────────────────────────────────────────────────
-   Provider — place once in __root.tsx
+   Provider
    ───────────────────────────────────────────────────────────── */
 export function PaletteProvider({
   children,
@@ -68,6 +68,8 @@ export function PaletteProvider({
 }): ReactElement {
   const [open, setOpen] = useState(false);
   const [aiMode, setAiMode] = useState(false);
+  const [focusSearchNonce, setFocusSearchNonce] = useState(0);
+  const [initialQuery, setInitialQuery] = useState("");
 
   const { messages, sendMessage, stop, status, setMessages } =
     useChat({
@@ -76,13 +78,7 @@ export function PaletteProvider({
 
   const hasChat = messages.length > 0;
 
-  /* ── isBusy with stability fallback ──────────────────────────
-     AI SDK v7 bug: in dev, status can get stuck on "streaming"
-     even after finish/[DONE] events arrive. We detect this by
-     watching message content stability — if status says streaming
-     but messages haven't changed for 1200ms, we force isBusy=false.
-     On deployed Workers this never fires because status flips correctly.
-  ─────────────────────────────────────────────────────────────── */
+  /* ── isBusy stability fallback ── */
   const [forceDone, setForceDone] = useState(false);
   const stableTimer = useRef<ReturnType<typeof setTimeout> | null>(
     null,
@@ -90,11 +86,7 @@ export function PaletteProvider({
   const prevMsgSig = useRef<string>("");
 
   useEffect(() => {
-    /* when a new stream starts, reset the force flag */
-    if (status === "streaming") {
-      setForceDone(false);
-    }
-    /* when status returns to ready normally, clear any pending timer */
+    if (status === "streaming") setForceDone(false);
     if (status === "ready") {
       setForceDone(false);
       if (stableTimer.current) clearTimeout(stableTimer.current);
@@ -103,8 +95,6 @@ export function PaletteProvider({
 
   useEffect(() => {
     if (status !== "streaming") return;
-
-    /* build a signature of the last assistant message content */
     const lastAsst = [...messages]
       .reverse()
       .find((m) => m.role === "assistant");
@@ -115,24 +105,20 @@ export function PaletteProvider({
           ),
         )
       : "";
-
     if (sig === prevMsgSig.current) {
-      /* content hasn't changed — start stability timer */
       if (!stableTimer.current) {
         stableTimer.current = setTimeout(() => {
           setForceDone(true);
           stableTimer.current = null;
-        }, 1200);
+        }, 600);
       }
     } else {
-      /* content changed — reset timer */
       prevMsgSig.current = sig;
       if (stableTimer.current) {
         clearTimeout(stableTimer.current);
         stableTimer.current = null;
       }
     }
-
     return () => {
       if (stableTimer.current) {
         clearTimeout(stableTimer.current);
@@ -141,13 +127,19 @@ export function PaletteProvider({
     };
   }, [messages, status]);
 
-  const isBusy = status === "streaming" && !forceDone;
+  /* isBusy is false immediately when messages are cleared */
+  const isBusy =
+    status === "streaming" && !forceDone && messages.length > 0;
 
   const resetAi = useCallback(() => {
     setMessages([]);
     setAiMode(false);
     setForceDone(false);
   }, [setMessages]);
+
+  const requestFocusSearch = useCallback(() => {
+    setFocusSearchNonce((n) => n + 1);
+  }, []);
 
   return (
     <PaletteContext.Provider
@@ -164,6 +156,10 @@ export function PaletteProvider({
         hasChat,
         isBusy,
         resetAi,
+        focusSearchNonce,
+        requestFocusSearch,
+        initialQuery,
+        setInitialQuery,
       }}
     >
       {children}

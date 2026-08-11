@@ -409,3 +409,83 @@ export const CompanyNameParam = HttpApiSchema.param(
   "name",
   Schema.String,
 );
+
+/**
+ * aggregate-schema.ts
+ * Add these exports to schemas.ts and import them in api.ts / handlers.ts
+ */
+
+// ---------------------------------------------------------------------------
+// Aggregate endpoint schemas
+// ---------------------------------------------------------------------------
+
+export const AggregateParams = Schema.Struct({
+  from: Schema.String.annotations({
+    description: "Base table name. Must be in the allowed whitelist.",
+  }),
+  /* All nested fields arrive as JSON-encoded strings via query params.
+     The handler's parseJsonField() decodes them before passing to runAggregate(). */
+  where: Schema.optional(Schema.String).annotations({
+    description: "JSON array of WhereClause objects",
+  }),
+  join: Schema.optional(Schema.String).annotations({
+    description: "JSON JoinClause object",
+  }),
+  select: Schema.optional(Schema.String).annotations({
+    description: "JSON array of SelectColumn objects",
+  }),
+  aggregate: Schema.optional(Schema.String).annotations({
+    description: "JSON array of AggregateColumn objects",
+  }),
+  group_by: Schema.optional(Schema.String).annotations({
+    description: "JSON array of column name strings",
+  }),
+  having: Schema.optional(Schema.String).annotations({
+    description: "JSON array of HavingClause objects",
+  }),
+  order_by: Schema.optional(Schema.String).annotations({
+    description: "JSON array of OrderByClause objects",
+  }),
+  limit: Schema.optional(Schema.NumberFromString).annotations({
+    description: "Max rows. Hard capped at 100.",
+  }),
+});
+const QueryPlan = Schema.Struct({
+  from: Schema.String,
+  join: Schema.NullOr(Schema.String),
+  where_count: Schema.Number,
+  aggregate_fns: Schema.Array(Schema.String),
+  having_count: Schema.Number,
+  limit: Schema.Number,
+});
+
+export const GapAnalysisUrlParams = Schema.Struct({
+  market: Schema.Literal("ie", "fr"),
+  expiry_before: Schema.optional(Schema.String),
+  expiry_after: Schema.optional(Schema.String),
+  max_products: Schema.optional(Schema.NumberFromString),
+  status: Schema.optional(Schema.String),
+  limit: Schema.optional(Schema.NumberFromString),
+});
+
+export const MarketDensityUrlParams = Schema.Struct({
+  market: Schema.Literal("ie", "fr"),
+  min_products: Schema.optional(Schema.NumberFromString),
+  max_products: Schema.optional(Schema.NumberFromString),
+  limit: Schema.optional(Schema.NumberFromString),
+});
+
+export const ExpiryRiskUrlParams = Schema.Struct({
+  expiry_before: Schema.String,
+  expiry_after: Schema.optional(Schema.String),
+  market: Schema.optional(Schema.Literal("ie", "fr")),
+  max_products: Schema.optional(Schema.NumberFromString),
+  cfs_only: Schema.optional(Schema.BooleanFromString),
+  limit: Schema.optional(Schema.NumberFromString),
+});
+
+export const AggregateResponse = Schema.Struct({
+  rows: Schema.Array(Schema.Unknown),
+  row_count: Schema.Number,
+  query_plan: QueryPlan,
+});

@@ -18,7 +18,7 @@ import {
 import { usePalette } from "~/hooks/usePalette";
 
 /* ─────────────────────────────────────────────
-   STYLES
+   STYLES  — unchanged from uploaded file
    ───────────────────────────────────────────── */
 const CSS = `
 @property --snake-angle {
@@ -32,6 +32,37 @@ const CSS = `
   100% { opacity:1; transform:translateY(0)    scale(1);    }
 }
 @keyframes spin-arc { to { transform: rotate(360deg); } }
+
+/* ── thinking indicator ── */
+@keyframes thinking-fade {
+  0%   { opacity: 0; transform: translateY(4px); }
+  15%  { opacity: 1; transform: translateY(0); }
+  80%  { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-4px); }
+}
+@keyframes thinking-dot {
+  0%, 100% { transform: scale(1);   opacity: 1; }
+  50%       { transform: scale(1.5); opacity: 0.6; }
+}
+.rb-thinking {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 0 10px;
+}
+.rb-thinking-dots {
+  display: flex; gap: 4px; flex-shrink: 0;
+}
+.rb-thinking-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: #16a34a;
+  animation: thinking-dot 1.2s ease-in-out infinite;
+}
+.rb-thinking-dot:nth-child(2) { animation-delay: 0.2s; }
+.rb-thinking-dot:nth-child(3) { animation-delay: 0.4s; }
+.rb-thinking-msg {
+  font-size: 13px; color: #888; font-style: italic;
+  animation: thinking-fade 2.2s ease-in-out forwards;
+  min-width: 0;
+}
 
 /* ── desktop pill wrapper ── */
 .rb-wrap { position:relative; }
@@ -94,16 +125,21 @@ const CSS = `
   transition:max-height .28s cubic-bezier(0,0,.2,1), opacity .12s ease;
 }
 
-/* ── mobile bottom area ── */
+/* ── mobile bottom area — always pinned ── */
 .rb-mob-wrap {
-  position:relative; flex-shrink:0;
-  padding:0 12px 28px;
+  position:fixed; bottom:0; left:0; right:0; z-index:60;
+  flex-shrink:0;
+  padding:10px 12px calc(12px + env(safe-area-inset-bottom, 0px));
   background:rgba(242,242,242,.96); backdrop-filter:blur(16px);
   border-top:.5px solid rgba(0,0,0,.10);
+  overflow:visible;
 }
-.rb-mob-wrap::before {
-  content:''; position:absolute;
-  top:2px; left:10px; right:10px; bottom:24px; border-radius:50px;
+
+.rb-mob-ring {
+  position:relative;
+}
+.rb-mob-ring::before {
+  content:''; position:absolute; inset:-2px; border-radius:52px;
   background: conic-gradient(
     from var(--snake-angle,0deg) at 50% 50%,
     transparent 0deg, transparent 278deg,
@@ -115,8 +151,8 @@ const CSS = `
   -webkit-mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);
   -webkit-mask-composite:xor; mask-composite:exclude; padding:2px;
 }
-.rb-mob-wrap.snake::before { opacity:1; animation:snake-spin 2s linear infinite; }
-.rb-mob-wrap.snake { filter:drop-shadow(0 0 5px rgba(74,222,128,.18)); }
+.rb-mob-ring.snake::before { opacity:1; animation:snake-spin 2s linear infinite; }
+.rb-mob-ring.snake { filter:drop-shadow(0 0 5px rgba(74,222,128,.18)); }
 
 /* ── mobile pill ── */
 .rb-mob-pill {
@@ -128,7 +164,27 @@ const CSS = `
 }
 .rb-mob-pill.ai { border-color:rgba(22,163,74,.4); }
 
-/* ── stop button ── */
+/* ── action button: send / stop / disabled send ── */
+.rb-action {
+  width:28px; height:28px; border-radius:50%;
+  display:flex; align-items:center; justify-content:center;
+  cursor:pointer; flex-shrink:0; position:relative;
+  background:transparent; border:none; padding:0;
+  transition:background .15s ease, color .15s ease, opacity .15s ease;
+}
+.rb-action.send-on { background:#16a34a; color:#fff; }
+.rb-action.send-on:active { background:#15803d; }
+.rb-action.send-off { color:#c4c4c4; cursor:default; }
+.rb-action.stop { background:transparent; color:#16a34a; }
+.rb-action-arc {
+  position:absolute; inset:0; border-radius:50%;
+  border:2px solid transparent;
+  border-top-color:#16a34a; border-right-color:#16a34a;
+  animation:spin-arc .8s linear infinite;
+}
+.rb-action-sq { width:7px; height:7px; border-radius:1.5px; background:#16a34a; }
+
+/* legacy stop (desktop omnibar) */
 .rb-stop {
   width:26px; height:26px; border-radius:50%;
   display:flex; align-items:center; justify-content:center;
@@ -200,18 +256,75 @@ const CSS = `
 /* ─────────────────────────────────────────────
    HELPERS
    ───────────────────────────────────────────── */
+
+/* Fast-path: obvious question words / punctuation → AI without waiting for API */
 const QUESTION_RE =
   /^(what|which|how|compare|find|show|is|can|does|are|list|analyse|analyze|check|tell|who|where|why|should|could|would|give|summarize|summarise|explain|describe)/i;
 
-function isQuestion(q: string): boolean {
+function isFastQuestion(q: string): boolean {
   const t = q.trim();
   if (t.length < 5) return false;
-  if (/^\d{1,7}-\d{2}-\d$/.test(t)) return false;
-  if (/^\d{4,7}$/.test(t)) return false;
+  if (/^\d{1,7}-\d{2}-\d$/.test(t)) return false; // CAS number
+  if (/^\d{4,7}$/.test(t)) return false; // PCS / AMM number
   if (t.endsWith("?")) return true;
   if (QUESTION_RE.test(t)) return true;
   if (t.length > 40) return true;
   return false;
+}
+
+/* Get the display name from a result entity */
+function entityName(r: SearchResult): string {
+  return (
+    r.entity?.name ??
+    r.entity?.product_name ??
+    r.entity?.company_name ??
+    ""
+  );
+}
+
+/* Derive effective mode from query + API results.
+   Rules (in order):
+   1. Fast-path question words → "llm" immediately (no API needed)
+   2. Single word, has results → "lookup" (user still typing a name)
+   3. Has an exact match (case-insensitive) → "lookup"
+   4. Multi-word (≥2 words) with no exact match → "llm"
+   5. Zero results → "llm"
+   6. Anything else (single word, no results yet) → "lookup" (pending) */
+function deriveMode(
+  query: string,
+  results: SearchResult[],
+  isFetching: boolean,
+  debounced: string,
+): "llm" | "lookup" {
+  const t = query.trim();
+  if (!t) return "lookup";
+
+  // fast-path
+  if (isFastQuestion(t)) return "llm";
+
+  // haven't fired the API yet (debounce pending) → stay lookup
+  if (t !== debounced && results.length === 0) return "lookup";
+
+  const words = t.split(/\s+/);
+  const lower = t.toLowerCase();
+  const hasExact = results.some(
+    (r) => entityName(r).toLowerCase() === lower,
+  );
+
+  // exact match always wins → lookup
+  if (hasExact) return "lookup";
+
+  // single word with results but no exact match → still lookup (user typing)
+  if (words.length === 1 && results.length > 0) return "lookup";
+
+  // multi-word with no exact match → AI
+  if (words.length >= 2 && !isFetching) return "llm";
+
+  // zero results (debounce settled, API returned empty) → AI
+  if (!isFetching && debounced.length >= 2 && results.length === 0)
+    return "llm";
+
+  return "lookup";
 }
 
 /* ─────────────────────────────────────────────
@@ -220,14 +333,13 @@ function isQuestion(q: string): boolean {
 interface Props {
   open: boolean;
   onClose: () => void;
-  onAiSubmit: () => void; /* tells root to show the AI layer */
+  onAiSubmit: () => void;
 }
 
 /* ─────────────────────────────────────────────
    COMPONENT
    ───────────────────────────────────────────── */
 export function CommandPalette({ open, onClose, onAiSubmit }: Props) {
-  /* ── read AI state from context (no useChat here) ── */
   const {
     messages,
     sendMessage,
@@ -236,6 +348,7 @@ export function CommandPalette({ open, onClose, onAiSubmit }: Props) {
     setMessages,
     hasChat,
     isBusy,
+    focusSearchNonce,
   } = usePalette();
 
   const [query, setQuery] = useState("");
@@ -247,30 +360,30 @@ export function CommandPalette({ open, onClose, onAiSubmit }: Props) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  /* mobile-specific state: "new" = default (typing clears on submit), "followup" = appends */
   const [mobMode, setMobMode] = useState<"new" | "followup">("new");
 
-  const mode = useMemo(
-    () => (isQuestion(query) ? "llm" : "lookup"),
-    [query],
-  );
-  const isLlmMode = mode === "llm" || hasChat;
-  const snakeOn =
-    (mode === "llm" && !hasChat && query.trim().length >= 5) ||
-    mobMode === "followup";
-  const drawerOn =
-    (mode === "lookup" &&
-      mobMode !== "followup" &&
-      query.length >= 2) ||
-    (mode === "llm" && !hasChat && query.trim().length >= 5);
+  const dismissMobKeyboard = useCallback(() => {
+    mobInputRef.current?.blur();
+  }, []);
 
+  useEffect(() => {
+    if (focusSearchNonce > 0) mobInputRef.current?.focus();
+  }, [focusSearchNonce]);
+
+  /* ── debounce — always fires for lookup-shaped queries ── */
   const [debouncedQuery, setDebouncedQuery] = useState("");
   useEffect(() => {
-    if (mode !== "lookup" || mobMode === "followup") return;
-    const t = setTimeout(() => setDebouncedQuery(query), 300);
+    /* skip debounce if fast-path already knows it's AI, or followup mode */
+    if (isFastQuestion(query) || mobMode === "followup") return;
+    if (query.trim().length < 2) {
+      setDebouncedQuery("");
+      return;
+    }
+    const t = setTimeout(() => setDebouncedQuery(query.trim()), 300);
     return () => clearTimeout(t);
-  }, [query, mode, mobMode]);
+  }, [query, mobMode]);
 
+  /* ── search query — fires whenever debounced changes ── */
   const { data: results = [], isFetching } = useQuery<SearchResult[]>(
     {
       queryKey: ["search", debouncedQuery],
@@ -278,34 +391,56 @@ export function CommandPalette({ open, onClose, onAiSubmit }: Props) {
         serverPaletteSearch({
           data: { query: debouncedQuery, limit: 20 },
         }),
-      enabled:
-        mode === "lookup" &&
-        mobMode !== "followup" &&
-        debouncedQuery.length >= 2,
+      enabled: debouncedQuery.length >= 2 && mobMode !== "followup",
       staleTime: 1000 * 60 * 2,
     },
   );
 
-  /* reset on open — desktop only; mobile stays open */
+  /* ── derive effective mode from query + results ── */
+  const effectiveMode = useMemo(
+    () => deriveMode(query, results, isFetching, debouncedQuery),
+    [query, results, isFetching, debouncedQuery],
+  );
+
+  /* kept for backward compat with desktop submit / keyboard handler */
+  const isLlmMode = effectiveMode === "llm" || hasChat;
+
+  const snakeOn =
+    (effectiveMode === "llm" &&
+      !hasChat &&
+      query.trim().length >= 5) ||
+    mobMode === "followup";
+
+  const drawerOn =
+    (effectiveMode === "lookup" &&
+      mobMode !== "followup" &&
+      query.length >= 2) ||
+    (effectiveMode === "llm" && !hasChat && query.trim().length >= 5);
+
+  const canSendAi =
+    !isBusy &&
+    status === "ready" &&
+    ((mobMode === "followup" && query.trim().length > 0) ||
+      (effectiveMode === "llm" && query.trim().length >= 5));
+
+  /* reset on open */
   useEffect(() => {
     if (open) {
       setQuery("");
       setDebouncedQuery("");
-      /* do NOT reset messages here — context holds them */
       requestAnimationFrame(() => inputRef.current?.focus());
     }
   }, [open]);
 
   useEffect(() => setHighlightIdx(0), [results]);
 
-  /* scroll mobile drawer-up to visual bottom (best match) — column-reverse means scrollTop=0 is the bottom */
+  /* scroll mobile drawer to visual bottom (column-reverse → scrollTop 0) */
   useEffect(() => {
-    if (results.length > 0 && drawerUpRef.current) {
+    if (results.length > 0 && drawerUpRef.current)
       drawerUpRef.current.scrollTop = 0;
-    }
   }, [results]);
 
-  /* scroll mobile chat to bottom on new messages */
+  /* scroll mobile chat to bottom */
   useEffect(() => {
     if (mobChatRef.current)
       mobChatRef.current.scrollTop = mobChatRef.current.scrollHeight;
@@ -313,7 +448,7 @@ export function CommandPalette({ open, onClose, onAiSubmit }: Props) {
 
   /* prefetch on highlight */
   useEffect(() => {
-    if (mode !== "lookup" || !results[highlightIdx]) return;
+    if (effectiveMode !== "lookup" || !results[highlightIdx]) return;
     const r = results[highlightIdx];
     if (r.type === "substance" && r.entity?.name) {
       queryClient.prefetchQuery({
@@ -325,10 +460,14 @@ export function CommandPalette({ open, onClose, onAiSubmit }: Props) {
         staleTime: 1000 * 60 * 5,
       });
     }
-  }, [highlightIdx, results, queryClient, mode]);
+  }, [highlightIdx, results, queryClient, effectiveMode]);
 
   const selectResult = useCallback(
     (r: SearchResult) => {
+      dismissMobKeyboard();
+      setQuery("");
+      setDebouncedQuery("");
+      setMessages([]);
       onClose();
       if (r.type === "substance")
         navigate({
@@ -349,7 +488,7 @@ export function CommandPalette({ open, onClose, onAiSubmit }: Props) {
           params: { name: r.entity.company_name },
         });
     },
-    [navigate, onClose],
+    [navigate, onClose, dismissMobKeyboard, setMessages],
   );
 
   /* desktop submit */
@@ -361,7 +500,7 @@ export function CommandPalette({ open, onClose, onAiSubmit }: Props) {
       query.trim().length >= 5 &&
       status === "ready"
     ) {
-      setMessages([]); /* always fresh from the palette */
+      setMessages([]);
       sendMessage({ text: query.trim() });
       setQuery("");
       onAiSubmit();
@@ -378,11 +517,12 @@ export function CommandPalette({ open, onClose, onAiSubmit }: Props) {
     onAiSubmit,
   ]);
 
+  /* mobile submit */
   const handleMobSubmit = useCallback(() => {
     const q = query.trim();
     if (!q) return;
+    dismissMobKeyboard();
 
-    /* followup mode — everything goes to AI, no lookup */
     if (mobMode === "followup") {
       if (status !== "ready") return;
       sendMessage({ text: q });
@@ -391,19 +531,22 @@ export function CommandPalette({ open, onClose, onAiSubmit }: Props) {
       return;
     }
 
-    /* default "new" mode */
-    if (mode === "lookup" && results[highlightIdx]) {
+    if (effectiveMode === "lookup" && results[highlightIdx]) {
       setMessages([]);
       selectResult(results[highlightIdx]);
       return;
     }
-    if (mode === "llm" && q.length >= 5 && status === "ready") {
+    if (
+      effectiveMode === "llm" &&
+      q.length >= 5 &&
+      status === "ready"
+    ) {
       setMessages([]);
       sendMessage({ text: q });
       setQuery("");
     }
   }, [
-    mode,
+    effectiveMode,
     mobMode,
     results,
     highlightIdx,
@@ -412,6 +555,7 @@ export function CommandPalette({ open, onClose, onAiSubmit }: Props) {
     status,
     sendMessage,
     setMessages,
+    dismissMobKeyboard,
   ]);
 
   /* keyboard */
@@ -458,356 +602,365 @@ export function CommandPalette({ open, onClose, onAiSubmit }: Props) {
         t.getAttribute("href")?.startsWith("/")
       ) {
         e.preventDefault();
+        dismissMobKeyboard();
+        setQuery("");
+        setDebouncedQuery("");
+        setMessages([]);
         onClose();
         navigate({ to: t.getAttribute("href")! });
       }
     },
-    [navigate, onClose],
+    [navigate, onClose, dismissMobKeyboard, setMessages],
   );
 
-  /* chip toggle: "Ask a follow-up" ↔ "New question" */
   function handleChipTap() {
     if (mobMode === "new") {
       setMobMode("followup");
       mobInputRef.current?.focus();
     } else {
-      /* switch back to new mode — do NOT clear messages */
       setMobMode("new");
     }
   }
 
-  if (!open) return null;
+  const mobExpanded =
+    hasChat || query.length >= 2 || mobMode === "followup" || snakeOn;
 
+  /* ── RENDER ── */
   return (
     <>
       <style>{CSS}</style>
-      <div
-        className="fixed inset-0 z-40 bg-black/20 backdrop-blur-[4px]"
-        onClick={onClose}
-      />
 
-      {/* ══════════════ DESKTOP ══════════════ */}
-      <div
-        className="hidden sm:block fixed z-50"
-        style={{
-          top: 100,
-          left: "50%",
-          transform: "translateX(-50%)",
-          width: "min(640px, calc(100vw - 48px))",
-        }}
-      >
-        <div
-          className={`rb-wrap${snakeOn ? " snake" : ""}${drawerOn ? " drawer-open" : ""}`}
-        >
-          <div className={`rb-pill${drawerOn ? " open" : ""}`}>
-            <span
-              style={{
-                flexShrink: 0,
-                lineHeight: 1,
-                color: snakeOn ? "#16a34a" : "#aaa",
-                transition: "color .18s",
-              }}
+      {/* ══════════════ DESKTOP (⌘K gated) ══════════════ */}
+      {open && (
+        <>
+          <div
+            className="fixed inset-0 z-40 bg-black/20 backdrop-blur-[4px]"
+            onClick={onClose}
+          />
+          <div
+            className="hidden sm:block fixed z-50"
+            style={{
+              top: 100,
+              left: "50%",
+              transform: "translateX(-50%)",
+              width: "min(640px, calc(100vw - 48px))",
+            }}
+          >
+            <div
+              className={`rb-wrap${snakeOn ? " snake" : ""}${drawerOn ? " drawer-open" : ""}`}
             >
-              {snakeOn ? <SparkleIcon /> : <SearchIcon />}
-            </span>
-            <input
-              ref={inputRef}
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder={
-                isLlmMode
-                  ? "Ask a regulatory question…"
-                  : "Search substances, products, companies…"
-              }
+              <div className={`rb-pill${drawerOn ? " open" : ""}`}>
+                <span
+                  style={{
+                    flexShrink: 0,
+                    lineHeight: 1,
+                    color: snakeOn ? "#16a34a" : "#aaa",
+                    transition: "color .18s",
+                  }}
+                >
+                  {snakeOn ? <SparkleIcon /> : <SearchIcon />}
+                </span>
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder={
+                    isLlmMode
+                      ? "Ask a regulatory question…"
+                      : "Search substances, products, companies…"
+                  }
+                  style={{
+                    flex: 1,
+                    border: "none",
+                    background: "transparent",
+                    fontSize: 16,
+                    outline: "none",
+                    fontFamily: "inherit",
+                    color: "#111",
+                    letterSpacing: "-0.1px",
+                  }}
+                />
+                {snakeOn && (
+                  <span
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 600,
+                      padding: "2px 8px",
+                      borderRadius: 20,
+                      background: "rgba(22,163,74,.10)",
+                      color: "#16a34a",
+                      border: ".5px solid rgba(22,163,74,.30)",
+                      flexShrink: 0,
+                    }}
+                  >
+                    AI
+                  </span>
+                )}
+                <span
+                  style={{
+                    fontSize: 11,
+                    color: "#ccc",
+                    flexShrink: 0,
+                  }}
+                >
+                  esc
+                </span>
+              </div>
+
+              <div className={`rb-drawer${drawerOn ? " open" : ""}`}>
+                {effectiveMode === "lookup" &&
+                  debouncedQuery.length >= 2 && (
+                    <div
+                      style={{ maxHeight: 380, overflowY: "auto" }}
+                    >
+                      {isFetching && results.length === 0 && (
+                        <Empty>Searching…</Empty>
+                      )}
+                      {!isFetching && results.length === 0 && (
+                        <Empty>
+                          No results for "{debouncedQuery}"
+                        </Empty>
+                      )}
+                      {results.map((r, i) => (
+                        <PaletteRow
+                          key={`${r.type}-${entityName(r) ?? i}`}
+                          result={r}
+                          highlighted={i === highlightIdx}
+                          onSelect={() => selectResult(r)}
+                          onMouseEnter={() => setHighlightIdx(i)}
+                          mobile={false}
+                        />
+                      ))}
+                    </div>
+                  )}
+                {snakeOn && (
+                  <div className="rb-ai-hint">
+                    <span style={{ fontSize: 14 }}>✦</span>
+                    <span>
+                      Press{" "}
+                      <span
+                        style={{
+                          background: "rgba(22,163,74,.12)",
+                          padding: "1px 5px",
+                          borderRadius: 4,
+                          fontFamily: "monospace",
+                          fontSize: 11,
+                        }}
+                      >
+                        ↵ Enter
+                      </span>{" "}
+                      to ask RegBridge AI
+                    </span>
+                  </div>
+                )}
+                <div className="rb-footer">
+                  {isLlmMode ? (
+                    <>
+                      <span>
+                        <span className="rb-kbd">↵</span>ask
+                      </span>
+                      <span>
+                        <span className="rb-kbd">esc</span>close
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <span>
+                        <span className="rb-kbd">↑</span>
+                        <span className="rb-kbd">↓</span>navigate
+                      </span>
+                      <span>
+                        <span className="rb-kbd">↵</span>select
+                      </span>
+                      <span>
+                        <span className="rb-kbd">esc</span>close
+                      </span>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ══════════════ MOBILE — search always visible ══════════════ */}
+      <div className="sm:hidden">
+        {mobExpanded && (
+          <div
+            className="fixed inset-0 z-50 flex flex-col"
+            style={{
+              background: "rgba(245,245,245,.97)",
+              backdropFilter: "blur(20px)",
+              paddingBottom:
+                "calc(72px + env(safe-area-inset-bottom, 0px))",
+            }}
+          >
+            <div
+              ref={mobChatRef}
+              onClick={handleLinkClick}
               style={{
                 flex: 1,
-                border: "none",
-                background: "transparent",
-                fontSize: 16,
-                outline: "none",
-                fontFamily: "inherit",
-                color: "#111",
-                letterSpacing: "-0.1px",
+                overflowY: "auto",
+                padding: "16px 16px 8px",
               }}
-            />
-            {snakeOn && (
-              <span
+            >
+              {hasChat && (
+                <MobChatStream messages={messages} isBusy={isBusy} />
+              )}
+              {!hasChat && !query && (
+                <div
+                  style={{
+                    paddingTop: 60,
+                    textAlign: "center",
+                    fontSize: 13,
+                    color: "#bbb",
+                  }}
+                >
+                  Type to search substances, products, companies
+                </div>
+              )}
+              {snakeOn && !hasChat && (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "14px 16px",
+                    marginTop: 16,
+                    background: "rgba(22,163,74,.06)",
+                    borderRadius: 12,
+                    border: ".5px solid rgba(22,163,74,.15)",
+                    fontSize: 13,
+                    color: "#16a34a",
+                  }}
+                >
+                  <span>✦</span>
+                  <span>
+                    Press <strong>Search</strong> to ask RegBridge AI
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {hasChat && !isBusy && (
+              <button
+                className={
+                  mobMode === "new"
+                    ? "rb-fu-chip"
+                    : "rb-fu-chip rb-fu-chip-alt"
+                }
+                onClick={handleChipTap}
+              >
+                {mobMode === "new" ? (
+                  <>
+                    <span>↑</span>
+                    <span>Ask a follow-up</span>
+                  </>
+                ) : (
+                  <>
+                    <span>⌘</span>
+                    <span>New question</span>
+                  </>
+                )}
+              </button>
+            )}
+
+            <div
+              className={`rb-drawer-up${drawerOn && effectiveMode === "lookup" ? " open" : ""}`}
+            >
+              <div
+                ref={drawerUpRef}
                 style={{
-                  fontSize: 11,
-                  fontWeight: 600,
-                  padding: "2px 8px",
-                  borderRadius: 20,
-                  background: "rgba(22,163,74,.10)",
-                  color: "#16a34a",
-                  border: ".5px solid rgba(22,163,74,.30)",
-                  flexShrink: 0,
+                  maxHeight: "55vh",
+                  overflowY: "auto",
+                  display: "flex",
+                  flexDirection: "column-reverse",
                 }}
               >
-                AI
-              </span>
-            )}
-            <span
-              style={{ fontSize: 11, color: "#ccc", flexShrink: 0 }}
-            >
-              esc
-            </span>
-          </div>
-
-          <div className={`rb-drawer${drawerOn ? " open" : ""}`}>
-            {mode === "lookup" && debouncedQuery.length >= 2 && (
-              <div style={{ maxHeight: 380, overflowY: "auto" }}>
                 {isFetching && results.length === 0 && (
                   <Empty>Searching…</Empty>
                 )}
-                {!isFetching && results.length === 0 && (
-                  <Empty>No results for "{debouncedQuery}"</Empty>
-                )}
+                {!isFetching &&
+                  debouncedQuery.length >= 2 &&
+                  results.length === 0 && (
+                    <Empty>No results for "{debouncedQuery}"</Empty>
+                  )}
                 {results.map((r, i) => (
                   <PaletteRow
-                    key={`${r.type}-${r.entity?.name ?? i}`}
+                    key={`mob-${r.type}-${entityName(r) ?? i}`}
                     result={r}
                     highlighted={i === highlightIdx}
                     onSelect={() => selectResult(r)}
                     onMouseEnter={() => setHighlightIdx(i)}
-                    mobile={false}
+                    mobile
                   />
                 ))}
               </div>
-            )}
-            {snakeOn && (
-              <div className="rb-ai-hint">
-                <span style={{ fontSize: 14 }}>✦</span>
-                <span>
-                  Press{" "}
-                  <span
-                    style={{
-                      background: "rgba(22,163,74,.12)",
-                      padding: "1px 5px",
-                      borderRadius: 4,
-                      fontFamily: "monospace",
-                      fontSize: 11,
-                    }}
-                  >
-                    ↵ Enter
-                  </span>{" "}
-                  to ask RegBridge AI
-                </span>
-              </div>
-            )}
-            <div className="rb-footer">
-              {isLlmMode ? (
-                <>
-                  <span>
-                    <span className="rb-kbd">↵</span>ask
-                  </span>
-                  <span>
-                    <span className="rb-kbd">esc</span>close
-                  </span>
-                </>
-              ) : (
-                <>
-                  <span>
-                    <span className="rb-kbd">↑</span>
-                    <span className="rb-kbd">↓</span>navigate
-                  </span>
-                  <span>
-                    <span className="rb-kbd">↵</span>select
-                  </span>
-                  <span>
-                    <span className="rb-kbd">esc</span>close
-                  </span>
-                </>
-              )}
             </div>
           </div>
-        </div>
-      </div>
-
-      {/* ══════════════ MOBILE ══════════════ */}
-      <div
-        className="sm:hidden fixed inset-0 z-50 flex flex-col"
-        style={{
-          background: "rgba(245,245,245,.97)",
-          backdropFilter: "blur(20px)",
-        }}
-      >
-        {/* scrollable area: chat OR empty hint */}
-        <div
-          ref={mobChatRef}
-          onClick={handleLinkClick}
-          style={{
-            flex: 1,
-            overflowY: "auto",
-            padding: "16px 16px 8px",
-          }}
-        >
-          {hasChat && (
-            <MobChatStream messages={messages} isBusy={isBusy} />
-          )}
-          {!hasChat && !query && (
-            <div
-              style={{
-                paddingTop: 60,
-                textAlign: "center",
-                fontSize: 13,
-                color: "#bbb",
-              }}
-            >
-              Type to search substances, products, companies
-            </div>
-          )}
-          {snakeOn && !hasChat && (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                padding: "14px 16px",
-                marginTop: 16,
-                background: "rgba(22,163,74,.06)",
-                borderRadius: 12,
-                border: ".5px solid rgba(22,163,74,.15)",
-                fontSize: 13,
-                color: "#16a34a",
-              }}
-            >
-              <span>✦</span>
-              <span>
-                Press <strong>Enter</strong> to ask RegBridge AI
-              </span>
-            </div>
-          )}
-        </div>
-
-        {/* two-state chip: shown only when AI has answered and not busy */}
-        {hasChat && !isBusy && (
-          <button
-            className={
-              mobMode === "new"
-                ? "rb-fu-chip"
-                : "rb-fu-chip rb-fu-chip-alt"
-            }
-            onClick={handleChipTap}
-          >
-            {mobMode === "new" ? (
-              <>
-                <span>↑</span>
-                <span>Ask a follow-up</span>
-              </>
-            ) : (
-              <>
-                <span>⌘</span>
-                <span>New question</span>
-              </>
-            )}
-          </button>
         )}
 
-        {/* upward drawer for lookup results */}
-        <div
-          className={`rb-drawer-up${drawerOn && mode === "lookup" ? " open" : ""}`}
-        >
-          {/* column-reverse: DOM order matches original array (index 0 = best match)
-              but renders visually bottom-up so best match sits closest to pill.
-              highlightIdx and keyboard nav work without any inversion. */}
-          <div
-            ref={drawerUpRef}
-            style={{
-              maxHeight: "55vh",
-              overflowY: "auto",
-              display: "flex",
-              flexDirection: "column-reverse",
-            }}
-          >
-            {isFetching && results.length === 0 && (
-              <Empty>Searching…</Empty>
-            )}
-            {!isFetching &&
-              debouncedQuery.length >= 2 &&
-              results.length === 0 && (
-                <Empty>No results for "{debouncedQuery}"</Empty>
-              )}
-            {results.map((r, i) => (
-              <PaletteRow
-                key={`mob-${r.type}-${r.entity?.name ?? i}`}
-                result={r}
-                highlighted={i === highlightIdx}
-                onSelect={() => selectResult(r)}
-                onMouseEnter={() => setHighlightIdx(i)}
-                mobile
-              />
-            ))}
-          </div>
-        </div>
-
-        {/* mobile pill — always at bottom */}
-        <div className={`rb-mob-wrap${snakeOn ? " snake" : ""}`}>
-          <div className={`rb-mob-pill${snakeOn ? " ai" : ""}`}>
-            <span
-              style={{
-                flexShrink: 0,
-                lineHeight: 1,
-                color:
-                  snakeOn || mobMode !== "new" ? "#16a34a" : "#aaa",
-                transition: "color .18s",
-              }}
-            >
-              {snakeOn || mobMode !== "new" ? (
-                <SparkleIcon size={16} />
-              ) : (
-                <SearchIcon size={16} />
-              )}
-            </span>
-            <input
-              ref={mobInputRef}
-              type="text"
-              value={query}
-              disabled={isBusy}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  handleMobSubmit();
+        {/* Always-on mobile search bar */}
+        <div className="rb-mob-wrap">
+          <div className={`rb-mob-ring${snakeOn ? " snake" : ""}`}>
+            <div className={`rb-mob-pill${snakeOn ? " ai" : ""}`}>
+              <span
+                style={{
+                  flexShrink: 0,
+                  lineHeight: 1,
+                  color:
+                    snakeOn || mobMode !== "new" ? "#16a34a" : "#aaa",
+                  transition: "color .18s",
+                }}
+              >
+                {snakeOn || mobMode !== "new" ? (
+                  <SparkleIcon size={16} />
+                ) : (
+                  <SearchIcon size={16} />
+                )}
+              </span>
+              <input
+                ref={mobInputRef}
+                type="search"
+                enterKeyHint={canSendAi ? "send" : "search"}
+                inputMode="search"
+                autoCapitalize="off"
+                autoCorrect="off"
+                value={query}
+                disabled={isBusy}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    if (isBusy) return;
+                    handleMobSubmit();
+                  }
+                }}
+                placeholder={
+                  mobMode === "followup"
+                    ? "Ask a follow-up…"
+                    : "Search substances, products, companies…"
                 }
-              }}
-              placeholder={
-                mobMode === "followup"
-                  ? "Ask a follow-up…"
-                  : "Search substances, products, companies…"
-              }
-              autoFocus
-              style={{
-                flex: 1,
-                border: "none",
-                background: "transparent",
-                fontSize: 15,
-                outline: "none",
-                fontFamily: "inherit",
-                color: isBusy ? "#aaa" : "#111",
-                transition: "color .2s",
-              }}
-            />
-            {/* Stop button while busy, AI badge when idle with chat */}
-            {isBusy ? (
-              <button
-                className="rb-stop"
-                onClick={stop}
-                title="Stop generation"
-                aria-label="Stop generation"
-              >
-                <span className="rb-stop-arc" />
-                <span className="rb-stop-sq" />
-              </button>
-            ) : snakeOn || hasChat ? (
-              <button
-                className="rb-stop idle"
-                aria-label="Generation complete"
-                title="Done"
-              >
-                <span className="rb-stop-sq" />
-              </button>
-            ) : null}
+                style={{
+                  flex: 1,
+                  border: "none",
+                  background: "transparent",
+                  fontSize: 15,
+                  outline: "none",
+                  fontFamily: "inherit",
+                  color: isBusy ? "#aaa" : "#111",
+                  transition: "color .2s",
+                }}
+              />
+              <MobActionButton
+                isBusy={isBusy}
+                canSend={canSendAi}
+                onSend={handleMobSubmit}
+                onStop={stop}
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -815,7 +968,57 @@ export function CommandPalette({ open, onClose, onAiSubmit }: Props) {
   );
 }
 
-/* ── mobile chat stream ── */
+/* ── thinking indicator — shown while AI is working, before first text ── */
+const THINKING_MSGS = [
+  "Querying regulatory database…",
+  "Cross-referencing IE product registrations…",
+  "Checking EU approval status…",
+  "Scanning 480K+ MRL entries…",
+  "Analysing substance data…",
+  "Computing market coverage…",
+  "Reviewing EFSA toxicology records…",
+  "Checking expiry timelines…",
+  "Mapping IE & FR product registrations…",
+  "Aggregating cross-market data…",
+];
+
+function ThinkingIndicator() {
+  const [idx, setIdx] = useState(0);
+  const [visible, setVisible] = useState(true);
+
+  useEffect(() => {
+    const cycle = setInterval(() => {
+      setVisible(false);
+      setTimeout(() => {
+        setIdx((i) => (i + 1) % THINKING_MSGS.length);
+        setVisible(true);
+      }, 300);
+    }, 2200);
+    return () => clearInterval(cycle);
+  }, []);
+
+  return (
+    <div className="rb-thinking">
+      <div className="rb-thinking-dots">
+        <div className="rb-thinking-dot" />
+        <div className="rb-thinking-dot" />
+        <div className="rb-thinking-dot" />
+      </div>
+      <span
+        className="rb-thinking-msg"
+        style={{
+          opacity: visible ? 1 : 0,
+          transform: visible ? "translateY(0)" : "translateY(-3px)",
+          transition: "opacity 0.28s ease, transform 0.28s ease",
+        }}
+      >
+        {THINKING_MSGS[idx]}
+      </span>
+    </div>
+  );
+}
+
+/* ── mobile chat stream — unchanged ── */
 function MobChatStream({
   messages,
   isBusy,
@@ -922,39 +1125,12 @@ function MobChatStream({
           )}
         </div>
       ))}
-      {isBusy &&
-        !messages.some(
-          (m) =>
-            m.role === "assistant" &&
-            m.parts?.some((p: any) => p.type === "text"),
-        ) && (
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              padding: "12px 0",
-            }}
-          >
-            <div
-              style={{
-                width: 8,
-                height: 8,
-                borderRadius: "50%",
-                background: "#16a34a",
-              }}
-              className="animate-pulse"
-            />
-            <span style={{ fontSize: 13, color: "#666" }}>
-              Analysing…
-            </span>
-          </div>
-        )}
+      {isBusy && <ThinkingIndicator />}
     </div>
   );
 }
 
-/* ── result row (shared desktop + mobile) ── */
+/* ── result row — unchanged ── */
 function PaletteRow({
   result,
   highlighted,
@@ -975,8 +1151,7 @@ function PaletteRow({
       : result.type === "product"
         ? "rb-icon-p"
         : "rb-icon-c";
-  const label =
-    e?.name ?? e?.product_name ?? e?.company_name ?? "Unknown";
+  const label = entityName(result) || "Unknown";
   const sub =
     result.type === "substance" && e?.cas_number
       ? `CAS ${e.cas_number}`
@@ -1042,7 +1217,70 @@ function Empty({ children }: { children: React.ReactNode }) {
   );
 }
 
-/* ── icons ── */
+/* ── icons — unchanged ── */
+function SendIcon({ size = 15 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <path d="M3.4 20.4l17.45-7.48a1 1 0 000-1.84L3.4 3.6a.993.993 0 00-1.39.91L2 9.12c0 .5.37.93.87.99L17 12 2.87 13.88c-.5.07-.87.5-.87 1l.01 4.61c0 .71.73 1.2 1.39.91z" />
+    </svg>
+  );
+}
+function MobActionButton({
+  isBusy,
+  canSend,
+  onSend,
+  onStop,
+}: {
+  isBusy: boolean;
+  canSend: boolean;
+  onSend: () => void;
+  onStop: () => void | Promise<void>;
+}) {
+  if (isBusy)
+    return (
+      <button
+        type="button"
+        className="rb-action stop"
+        onClick={() => {
+          void onStop();
+        }}
+        title="Stop generation"
+        aria-label="Stop generation"
+      >
+        <span className="rb-action-arc" />
+        <span className="rb-action-sq" />
+      </button>
+    );
+  if (canSend)
+    return (
+      <button
+        type="button"
+        className="rb-action send-on"
+        onClick={onSend}
+        title="Send"
+        aria-label="Send"
+      >
+        <SendIcon />
+      </button>
+    );
+  return (
+    <button
+      type="button"
+      className="rb-action send-off"
+      disabled
+      title="Send"
+      aria-label="Send (disabled)"
+    >
+      <SendIcon />
+    </button>
+  );
+}
 function SearchIcon({ size = 17 }: { size?: number }) {
   return (
     <svg

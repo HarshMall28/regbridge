@@ -53,6 +53,16 @@ const ROOT_CSS = `
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; flex-shrink: 0; position: relative;
   background: transparent; border: none; padding: 0;
+  transition: background 0.15s ease, color 0.15s ease;
+  color: #16a34a;
+}
+.rb-stop-btn.send-on {
+  background: #16a34a;
+  color: #fff;
+}
+.rb-stop-btn.send-off {
+  color: #c4c4c4;
+  cursor: default;
 }
 .rb-stop-arc {
   position: absolute; inset: 0; border-radius: 50%;
@@ -65,8 +75,6 @@ const ROOT_CSS = `
   width: 8px; height: 8px; border-radius: 2px;
   background: #16a34a; flex-shrink: 0;
 }
-.rb-stop-btn.idle .rb-stop-arc { display: none; }
-.rb-stop-btn.idle .rb-stop-sq  { background: #ccc; }
 .rb-answer-panel {
   position: fixed; top: 96px; left: 0; right: 0; bottom: 0;
   overflow-y: auto; z-index: 35;
@@ -103,6 +111,27 @@ const ROOT_CSS = `
   background: rgba(22,163,74,0.10); color: #16a34a;
   font-size: 14px; padding: 8px 14px; border-radius: 12px;
   max-width: 85%;
+}
+
+/* ── thinking indicator ── */
+@keyframes thinking-dot {
+  0%, 100% { transform: scale(1);   opacity: 1; }
+  50%       { transform: scale(1.5); opacity: 0.6; }
+}
+.rb-thinking {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 0 10px;
+}
+.rb-thinking-dots { display: flex; gap: 4px; flex-shrink: 0; }
+.rb-thinking-dot {
+  width: 6px; height: 6px; border-radius: 50%; background: #16a34a;
+  animation: thinking-dot 1.2s ease-in-out infinite;
+}
+.rb-thinking-dot:nth-child(2) { animation-delay: 0.2s; }
+.rb-thinking-dot:nth-child(3) { animation-delay: 0.4s; }
+.rb-thinking-msg {
+  font-size: 13px; color: #888; font-style: italic;
+  transition: opacity 0.28s ease, transform 0.28s ease;
 }
 `;
 
@@ -199,7 +228,10 @@ function RootInner() {
         />
       )}
 
-      <Outlet />
+      {/* Mobile bottom search bar clearance */}
+      <div className="pb-[88px] sm:pb-0">
+        <Outlet />
+      </div>
       <FloatingFooter />
 
       <CommandPalette
@@ -238,6 +270,15 @@ function DesktopAiLayer({
     sendMessage({ text: followUp.trim() });
     setFollowUp("");
   }
+
+  function submitFollowUp() {
+    if (!followUp.trim() || isBusy) return;
+    sendMessage({ text: followUp.trim() });
+    setFollowUp("");
+  }
+
+  const canSendFollowUp =
+    !isBusy && status === "ready" && followUp.trim().length > 0;
 
   function handleLinkClick(e: React.MouseEvent) {
     const t = e.target as HTMLAnchorElement;
@@ -283,20 +324,40 @@ function DesktopAiLayer({
             AI
           </span>
 
-          {/* Stop / idle indicator */}
-          <button
-            className={`rb-stop-btn ${isBusy ? "" : "idle"}`}
-            onClick={() => {
-              if (isBusy) stop();
-            }}
-            title={isBusy ? "Stop generation" : "Done"}
-            aria-label={
-              isBusy ? "Stop generation" : "Generation complete"
-            }
-          >
-            {isBusy && <span className="rb-stop-arc" />}
-            <span className="rb-stop-sq" />
-          </button>
+          {/* Send when typing · stop while streaming · disabled send when idle */}
+          {isBusy ? (
+            <button
+              className="rb-stop-btn"
+              onClick={() => {
+                void stop();
+              }}
+              title="Stop generation"
+              aria-label="Stop generation"
+            >
+              <span className="rb-stop-arc" />
+              <span className="rb-stop-sq" />
+            </button>
+          ) : (
+            <button
+              className={`rb-stop-btn ${canSendFollowUp ? "send-on" : "send-off"}`}
+              onClick={canSendFollowUp ? submitFollowUp : undefined}
+              disabled={!canSendFollowUp}
+              title="Send"
+              aria-label={
+                canSendFollowUp ? "Send" : "Send (disabled)"
+              }
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                <path d="M3.4 20.4l17.45-7.48a1 1 0 000-1.84L3.4 3.6a.993.993 0 00-1.39.91L2 9.12c0 .5.37.93.87.99L17 12 2.87 13.88c-.5.07-.87.5-.87 1l.01 4.61c0 .71.73 1.2 1.39.91z" />
+              </svg>
+            </button>
+          )}
 
           <button
             onClick={onNewSearch}
@@ -390,37 +451,59 @@ function DesktopAiLayer({
           ))}
 
           {/* Thinking indicator */}
-          {isBusy &&
-            !messages.some(
-              (m) =>
-                m.role === "assistant" &&
-                m.parts?.some((p: any) => p.type === "text"),
-            ) && (
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  padding: "12px 0",
-                }}
-              >
-                <div
-                  style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: "50%",
-                    background: "#16a34a",
-                  }}
-                  className="animate-pulse"
-                />
-                <span style={{ fontSize: 13, color: "#666" }}>
-                  Analysing…
-                </span>
-              </div>
-            )}
+          {isBusy && <DesktopThinkingIndicator />}
         </div>
       </div>
     </>
+  );
+}
+
+/* ── desktop thinking indicator ── */
+const THINKING_MSGS = [
+  "Querying regulatory database…",
+  "Cross-referencing IE product registrations…",
+  "Checking EU approval status…",
+  "Scanning 480K+ MRL entries…",
+  "Analysing substance data…",
+  "Computing market coverage…",
+  "Reviewing EFSA toxicology records…",
+  "Checking expiry timelines…",
+  "Mapping IE & FR product registrations…",
+  "Aggregating cross-market data…",
+];
+
+function DesktopThinkingIndicator() {
+  const [idx, setIdx] = useState(0);
+  const [visible, setVisible] = useState(true);
+
+  useEffect(() => {
+    const cycle = setInterval(() => {
+      setVisible(false);
+      setTimeout(() => {
+        setIdx((i) => (i + 1) % THINKING_MSGS.length);
+        setVisible(true);
+      }, 300);
+    }, 2200);
+    return () => clearInterval(cycle);
+  }, []);
+
+  return (
+    <div className="rb-thinking">
+      <div className="rb-thinking-dots">
+        <div className="rb-thinking-dot" />
+        <div className="rb-thinking-dot" />
+        <div className="rb-thinking-dot" />
+      </div>
+      <span
+        className="rb-thinking-msg"
+        style={{
+          opacity: visible ? 1 : 0,
+          transform: visible ? "translateY(0)" : "translateY(-3px)",
+        }}
+      >
+        {THINKING_MSGS[idx]}
+      </span>
+    </div>
   );
 }
 
@@ -440,91 +523,62 @@ function RootDocument({
   );
 }
 
-/* ─── Top bar (unchanged logic) ─── */
+/* ─── Top bar ─── */
 function TopBar() {
   const { setOpen } = usePalette();
-  const [dismissed, setDismissed] = useState(false);
 
   return (
-    <>
-      {!dismissed && (
-        <div className="block lg:hidden bg-brand/10 border-b border-brand/20 px-4 py-2 text-center text-xs text-txt-secondary">
-          <span>For the full ⌘K experience, open on desktop</span>
-          <button
-            onClick={() => setDismissed(true)}
-            className="ml-3 text-txt-tertiary hover:text-txt-primary"
-          >
-            ✕
-          </button>
-        </div>
-      )}
-      <header className="sticky top-0 z-30 border-b border-border bg-surface-card">
-        <div className="max-w-7xl mx-auto flex items-center justify-between px-5 py-2.5">
+    <header className="sticky top-0 z-30 border-b border-border bg-surface-card">
+      <div className="max-w-7xl mx-auto flex items-center justify-between px-5 py-2.5">
+        <Link
+          to="/"
+          className="text-brand font-bold text-lg tracking-tight"
+        >
+          LS
+        </Link>
+        {/* Desktop only — mobile uses the always-on bottom search bar */}
+        <button
+          onClick={() => setOpen(true)}
+          className="hidden lg:flex absolute left-1/2 -translate-x-1/2 items-center gap-1.5 text-txt-tertiary hover:text-txt-secondary transition-colors text-sm"
+          aria-label="Open search"
+        >
+          <kbd className="kbd">Ctrl</kbd>
+          <span className="text-txt-tertiary">/</span>
+          <kbd className="kbd">⌘</kbd>
+          <kbd className="kbd">K</kbd>
+        </button>
+        <nav className="flex items-center gap-4 sm:gap-6 text-xs sm:text-sm">
           <Link
             to="/"
-            className="text-brand font-bold text-lg tracking-tight"
+            activeProps={{ className: "text-brand font-medium" }}
+            inactiveProps={{
+              className: "text-txt-secondary hover:text-txt-primary",
+            }}
           >
-            LS
+            Explorer
           </Link>
-          <button
-            onClick={() => setOpen(true)}
-            className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1.5 text-txt-tertiary hover:text-txt-secondary transition-colors text-sm"
+          <Link
+            to="/mcp"
+            activeProps={{ className: "text-brand font-medium" }}
+            inactiveProps={{
+              className: "text-txt-secondary hover:text-txt-primary",
+            }}
           >
-            <svg
-              className="w-5 h-5 lg:hidden"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z"
-              />
-            </svg>
-            <span className="hidden lg:flex items-center gap-1">
-              <kbd className="kbd">Ctrl</kbd>
-              <span className="text-txt-tertiary">/</span>
-              <kbd className="kbd">⌘</kbd>
-              <kbd className="kbd">K</kbd>
-            </span>
-          </button>
-          <nav className="flex items-center gap-4 sm:gap-6 text-xs sm:text-sm">
-            <Link
-              to="/"
-              activeProps={{ className: "text-brand font-medium" }}
-              inactiveProps={{
-                className:
-                  "text-txt-secondary hover:text-txt-primary",
-              }}
-            >
-              Explorer
-            </Link>
-            <Link
-              to="/mcp"
-              activeProps={{ className: "text-brand font-medium" }}
-              inactiveProps={{
-                className:
-                  "text-txt-secondary hover:text-txt-primary",
-              }}
-            >
-              MCP
-            </Link>
-            <Link
-              to="/architecture"
-              activeProps={{ className: "text-brand font-medium" }}
-              inactiveProps={{
-                className:
-                  "text-txt-secondary hover:text-txt-primary whitespace-nowrap",
-              }}
-            >
-              Architecture
-            </Link>
-          </nav>
-        </div>
-      </header>
-    </>
+            MCP
+          </Link>
+          <Link
+            to="/architecture"
+            activeProps={{ className: "text-brand font-medium" }}
+            inactiveProps={{
+              className:
+                "text-txt-secondary hover:text-txt-primary whitespace-nowrap",
+            }}
+          >
+            Architecture
+          </Link>
+        </nav>
+      </div>
+    </header>
   );
 }
 

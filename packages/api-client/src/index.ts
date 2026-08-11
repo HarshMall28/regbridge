@@ -19,6 +19,11 @@ import type {
   SchemaResult,
   ExploreResult,
   ListTablesResponse,
+  AggregateResult,
+  AggregateParams,
+  GapAnalysisParams,
+  MarketDensityParams,
+  ExpiryRiskParams,
 } from "./types.js";
 
 export * from "./types.js";
@@ -150,6 +155,83 @@ export function createApiClient(api: Fetcher, apiKey: string) {
     ): Promise<SchemaResult> => {
       const res = await call(`/api/tables/${e(tableName)}/schema`);
       return (await res.json()) as SchemaResult;
+    },
+    aggregate: async (
+      params: AggregateParams,
+    ): Promise<AggregateResult> => {
+      // Send complex nested params as JSON-encoded query string fields
+      // since GET requests can't have a body
+      const query = qs({
+        from: params.from,
+        where: params.where
+          ? JSON.stringify(params.where)
+          : undefined,
+        join: params.join ? JSON.stringify(params.join) : undefined,
+        select: params.select
+          ? JSON.stringify(params.select)
+          : undefined,
+        aggregate: params.aggregate
+          ? JSON.stringify(params.aggregate)
+          : undefined,
+        group_by: params.group_by
+          ? JSON.stringify(params.group_by)
+          : undefined,
+        having: params.having
+          ? JSON.stringify(params.having)
+          : undefined,
+        order_by: params.order_by
+          ? JSON.stringify(params.order_by)
+          : undefined,
+        limit: params.limit,
+      });
+      const res = await call(`/api/aggregate${query}`);
+      return (await res.json()) as AggregateResult;
+    },
+
+    gapAnalysis: async (
+      params: GapAnalysisParams,
+    ): Promise<AggregateResult> => {
+      const query = qs({
+        market: params.market,
+        expiry_before: params.expiry_before,
+        expiry_after: params.expiry_after,
+        max_products: params.max_products,
+        status: params.status,
+        limit: params.limit,
+      });
+      const res = await call(`/api/gap-analysis${query}`);
+      return (await res.json()) as AggregateResult;
+    },
+
+    marketDensity: async (
+      params: MarketDensityParams,
+    ): Promise<AggregateResult> => {
+      const query = qs({
+        market: params.market,
+        min_products: params.min_products,
+        max_products: params.max_products,
+        limit: params.limit,
+      });
+      const res = await call(`/api/market-density${query}`);
+      return (await res.json()) as AggregateResult;
+    },
+
+    expiryRisk: async (
+      params: ExpiryRiskParams,
+    ): Promise<AggregateResult> => {
+      const query = qs({
+        expiry_before: params.expiry_before,
+        expiry_after: params.expiry_after,
+        market: params.market,
+        max_products: params.max_products,
+        cfs_only:
+          params.cfs_only !== undefined
+            ? String(params.cfs_only)
+            : undefined,
+        limit: params.limit,
+      });
+      const res = await call(`/api/expiry-risk${query}`);
+      return (await res.json()) as AggregateResult;
     },
   };
 }

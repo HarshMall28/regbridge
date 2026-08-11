@@ -27,7 +27,13 @@ import {
   exploreSchema,
   listTables,
 } from "@regbridge/db";
-
+import {
+  runAggregate,
+  AggregateValidationError,
+} from "@regbridge/db";
+import { substanceGapAnalysis } from "@regbridge/db";
+import { marketDensity } from "@regbridge/db";
+import { expiryRiskScan } from "@regbridge/db";
 // ---------------------------------------------------------------------------
 // Health group handler
 // ---------------------------------------------------------------------------
@@ -320,6 +326,128 @@ const CompaniesGroupLive = HttpApiBuilder.group(
       ),
     ),
 );
+function parseJsonField<T>(v: unknown): T | undefined {
+  if (v === undefined || v === null) return undefined;
+  if (typeof v === "string") {
+    try {
+      return JSON.parse(v) as T;
+    } catch {
+      return undefined;
+    }
+  }
+  return v as T;
+}
+const AggregateGroupLive = HttpApiBuilder.group(
+  RegBridgeApi,
+  "aggregate",
+  (handlers) =>
+    handlers.handle("runAggregate", ({ urlParams }) => {
+      // Parse the JSON body fields that arrive as strings via URL params
+      // The Effect schema decodes top-level primitives but nested arrays
+      // come through as JSON strings when sent via query params.
+      // Workaround: accept the full params object as parsed by Effect schema.
+      return Effect.tryPromise({
+        try: async () => {
+          const result = await runAggregate({
+            from: (urlParams as any).from,
+            where: parseJsonField((urlParams as any).where),
+            join: parseJsonField((urlParams as any).join),
+            select: parseJsonField((urlParams as any).select),
+            aggregate: parseJsonField((urlParams as any).aggregate),
+            group_by: parseJsonField((urlParams as any).group_by),
+            having: parseJsonField((urlParams as any).having),
+            order_by: parseJsonField((urlParams as any).order_by),
+            limit: (urlParams as any).limit,
+          });
+          return result;
+        },
+        catch: (err) => {
+          const msg =
+            err instanceof Error ? err.message : "Aggregate failed";
+          if (err instanceof AggregateValidationError) {
+            return new ValidationError({ message: msg });
+          }
+          return new ValidationError({ message: msg });
+        },
+      });
+    }),
+);
+
+const GapAnalysisGroupLive = HttpApiBuilder.group(
+  RegBridgeApi,
+  "gap-analysis",
+  (handlers) =>
+    handlers.handle("runGapAnalysis", ({ urlParams }) =>
+      Effect.tryPromise({
+        try: () =>
+          substanceGapAnalysis({
+            market: urlParams.market as "ie" | "fr",
+            expiry_before: urlParams.expiry_before,
+            expiry_after: urlParams.expiry_after,
+            max_products: urlParams.max_products,
+            status: urlParams.status,
+            limit: urlParams.limit,
+          }),
+        catch: (err) =>
+          new ValidationError({
+            message:
+              err instanceof Error
+                ? err.message
+                : "Gap analysis failed",
+          }),
+      }),
+    ),
+);
+
+const MarketDensityGroupLive = HttpApiBuilder.group(
+  RegBridgeApi,
+  "market-density",
+  (handlers) =>
+    handlers.handle("runMarketDensity", ({ urlParams }) =>
+      Effect.tryPromise({
+        try: () =>
+          marketDensity({
+            market: urlParams.market as "ie" | "fr",
+            min_products: urlParams.min_products,
+            max_products: urlParams.max_products,
+            limit: urlParams.limit,
+          }),
+        catch: (err) =>
+          new ValidationError({
+            message:
+              err instanceof Error
+                ? err.message
+                : "Market density failed",
+          }),
+      }),
+    ),
+);
+
+const ExpiryRiskGroupLive = HttpApiBuilder.group(
+  RegBridgeApi,
+  "expiry-risk",
+  (handlers) =>
+    handlers.handle("runExpiryRisk", ({ urlParams }) =>
+      Effect.tryPromise({
+        try: () =>
+          expiryRiskScan({
+            expiry_before: urlParams.expiry_before,
+            expiry_after: urlParams.expiry_after,
+            market: urlParams.market as "ie" | "fr" | undefined,
+            max_products: urlParams.max_products,
+            cfs_only: urlParams.cfs_only,
+            limit: urlParams.limit,
+          }),
+        catch: (err) =>
+          new ValidationError({
+            message:
+              err instanceof Error
+                ? err.message
+                : "Expiry risk scan failed",
+          }),
+      }),
+    ),
+);
 // ---------------------------------------------------------------------------
 // Composed API layer — provide this to the server
 // ---------------------------------------------------------------------------
@@ -332,4 +460,8 @@ export const ApiLive = HttpApiBuilder.api(RegBridgeApi).pipe(
   Layer.provide(CompaniesGroupLive),
   Layer.provide(MrlsGroupLive),
   Layer.provide(TablesGroupLive),
+  Layer.provide(AggregateGroupLive),
+  Layer.provide(GapAnalysisGroupLive),
+  Layer.provide(MarketDensityGroupLive),
+  Layer.provide(ExpiryRiskGroupLive),
 );

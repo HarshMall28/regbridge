@@ -370,3 +370,98 @@ export interface HealthResponse {
   status: string;
   timestamp: string;
 }
+
+export interface AggregateWhereClause {
+  column: string;
+  op:
+    | "eq"
+    | "neq"
+    | "lt"
+    | "lte"
+    | "gt"
+    | "gte"
+    | "ilike"
+    | "like"
+    | "in"
+    | "is_null"
+    | "not_null";
+  value?: string | number | boolean | string[];
+}
+
+export interface AggregateColumn {
+  fn: "count" | "count_distinct" | "sum" | "avg" | "min" | "max";
+  column: string;
+  alias: string;
+}
+
+export interface AggregateSelectColumn {
+  column: string;
+  alias?: string;
+}
+
+export interface AggregateJoin {
+  table: string;
+  type: "left" | "inner";
+  on: { from_column: string; to_column: string };
+}
+
+export interface AggregateHaving {
+  alias: string;
+  op: "eq" | "neq" | "lt" | "lte" | "gt" | "gte";
+  value: number;
+}
+
+export interface AggregateOrderBy {
+  column: string;
+  direction: "asc" | "desc";
+}
+
+export interface AggregateParams {
+  from: string;
+  where?: AggregateWhereClause[];
+  join?: AggregateJoin;
+  select?: AggregateSelectColumn[];
+  aggregate?: AggregateColumn[];
+  group_by?: string[];
+  having?: AggregateHaving[];
+  order_by?: AggregateOrderBy[];
+  limit?: number;
+}
+
+export interface AggregateResult {
+  rows: Record<string, string | number | boolean | null>[];
+  row_count: number;
+  query_plan: {
+    from: string;
+    join: string | null;
+    where_count: number;
+    aggregate_fns: string[];
+    having_count: number;
+    limit: number;
+  };
+}
+
+export interface GapAnalysisParams {
+  market: "ie" | "fr";
+  expiry_before?: string;
+  expiry_after?: string;
+  max_products?: number;
+  status?: string;
+  limit?: number;
+}
+
+export interface MarketDensityParams {
+  market: "ie" | "fr";
+  min_products?: number;
+  max_products?: number;
+  limit?: number;
+}
+
+export interface ExpiryRiskParams {
+  expiry_before: string;
+  expiry_after?: string;
+  market?: "ie" | "fr";
+  max_products?: number;
+  cfs_only?: boolean;
+  limit?: number;
+}
