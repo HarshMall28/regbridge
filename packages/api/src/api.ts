@@ -39,8 +39,12 @@ import {
   NotFoundError,
   ValidationError,
   CompanyNameParam,
+  AggregateParams,
+  AggregateResponse,
+  GapAnalysisUrlParams,
+  MarketDensityUrlParams,
+  ExpiryRiskUrlParams,
 } from "./schemas.js";
-
 // ---------------------------------------------------------------------------
 // Health group (unchanged from Chat 1)
 // ---------------------------------------------------------------------------
@@ -138,11 +142,40 @@ class CompaniesGroup extends HttpApiGroup.make("companies").add(
     .addSuccess(Schema.Unknown)
     .addError(NotFoundError),
 ) {}
+class AggregateGroup extends HttpApiGroup.make("aggregate").add(
+  HttpApiEndpoint.get("runAggregate", "/api/aggregate")
+    .setUrlParams(AggregateParams)
+    .addSuccess(AggregateResponse)
+    .addError(ValidationError)
+    .addError(NotFoundError),
+) {}
+
+class GapAnalysisGroup extends HttpApiGroup.make("gap-analysis").add(
+  HttpApiEndpoint.get("runGapAnalysis", "/api/gap-analysis")
+    .setUrlParams(GapAnalysisUrlParams)
+    .addSuccess(AggregateResponse)
+    .addError(ValidationError),
+) {}
+
+class MarketDensityGroup extends HttpApiGroup.make(
+  "market-density",
+).add(
+  HttpApiEndpoint.get("runMarketDensity", "/api/market-density")
+    .setUrlParams(MarketDensityUrlParams)
+    .addSuccess(AggregateResponse)
+    .addError(ValidationError),
+) {}
+
+class ExpiryRiskGroup extends HttpApiGroup.make("expiry-risk").add(
+  HttpApiEndpoint.get("runExpiryRisk", "/api/expiry-risk")
+    .setUrlParams(ExpiryRiskUrlParams)
+    .addSuccess(AggregateResponse)
+    .addError(ValidationError),
+) {}
 
 // ---------------------------------------------------------------------------
 // Root API — all groups composed
 // ---------------------------------------------------------------------------
-
 export class RegBridgeApi extends HttpApi.make("regbridge")
   .add(HealthGroup)
   .add(SearchGroup)
@@ -150,4 +183,8 @@ export class RegBridgeApi extends HttpApi.make("regbridge")
   .add(ProductsGroup)
   .add(CompaniesGroup)
   .add(MrlsGroup)
-  .add(TablesGroup) {}
+  .add(TablesGroup)
+  .add(AggregateGroup)
+  .add(GapAnalysisGroup)
+  .add(MarketDensityGroup)
+  .add(ExpiryRiskGroup) {}
