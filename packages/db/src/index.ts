@@ -1,4 +1,4 @@
-export { db } from "./connection";
+export { db, initDb } from "./connection";
 export type { Database } from "./types";
 export { sql } from "kysely";
 

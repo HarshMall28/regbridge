@@ -10,7 +10,7 @@ import type {
   CompanyIeProduct,
   CompanyFrProduct,
   CompanyProfile,
-} from "~/lib/api-company";
+} from "~/lib/types";
 // ---------------------------------------------------------------------------
 // Route
 // ---------------------------------------------------------------------------

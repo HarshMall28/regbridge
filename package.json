@@ -8,8 +8,8 @@
   "scripts": {
     "migrate": "bun run --env-file .env packages/db/src/migrate.ts",
     "migrate:down": "bun run --env-file .env packages/db/src/migrate.ts down",
-    "dev:api": "bun run --env-file .env packages/api/src/server.ts",
-    "dev:mcp": "bun run --env-file .env packages/mcp/src/server.ts",
+    "dev:api": "cd packages/api && npx wrangler dev",
+    "dev:mcp": "cd packages/mcp && npx wrangler dev --port 8788",
     "ingest:eu": "bun run --env-file .env packages/ingestion/src/eu-api.ts",
     "ingest:eu-emergency": "bun run --env-file .env packages/ingestion/src/eu-emergency.ts",
     "probe:substance-docs": "bun run --env-file .env packages/ingestion/src/probe-substance-docs.ts",

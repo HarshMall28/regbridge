@@ -40,7 +40,30 @@ export function Pagination({
       <span>
         {start}–{end} of {totalItems}
       </span>
-      <div className="flex items-center gap-0.5">
+
+      {/* Mobile: compact prev / page / next */}
+      <div className="flex sm:hidden items-center gap-2">
+        <button
+          onClick={() => onPageChange(page - 1)}
+          disabled={page === 0}
+          className="h-10 px-3 page-btn disabled:opacity-30"
+        >
+          Prev
+        </button>
+        <span className="text-sm text-txt-secondary tabular-nums">
+          {page + 1} / {totalPages}
+        </span>
+        <button
+          onClick={() => onPageChange(page + 1)}
+          disabled={page >= totalPages - 1}
+          className="h-10 px-3 page-btn disabled:opacity-30"
+        >
+          Next
+        </button>
+      </div>
+
+      {/* Desktop: unchanged from original */}
+      <div className="hidden sm:flex items-center gap-0.5">
         <button
           onClick={() => onPageChange(page - 1)}
           disabled={page === 0}

@@ -4,10 +4,7 @@ import { cloudflare } from "@cloudflare/vite-plugin";
 import viteReact from "@vitejs/plugin-react";
 import tsconfigPaths from "vite-tsconfig-paths";
 
-export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, "../../", "");
-  process.env.DATABASE_URL = env.DATABASE_URL;
-
+export default defineConfig(() => {
   return {
     server: {
       port: 3001,

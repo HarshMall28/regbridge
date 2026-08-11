@@ -8,7 +8,9 @@
  *   bun run --env-file .env packages/ingestion/src/probe-substance-docs.ts
  */
 
-import { db } from "@regbridge/db";
+import { db, initDb } from "@regbridge/db";
+
+initDb(Bun.env.DATABASE_URL!);
 
 // ── Config ─────────────────────────────────────────────────────────────────
 
@@ -87,10 +89,14 @@ function percentile(sorted: number[], p: number): number {
 function printStats(label: string, results: ProbeResult[]) {
   const successes = results.filter((r) => r.status === 200);
   const failures = results.filter((r) => r.status !== 200);
-  const latencies = successes.map((r) => r.latencyMs).sort((a, b) => a - b);
+  const latencies = successes
+    .map((r) => r.latencyMs)
+    .sort((a, b) => a - b);
 
   console.log(`\n── ${label} ──`);
-  console.log(`  Total: ${results.length} | OK: ${successes.length} | Failed: ${failures.length}`);
+  console.log(
+    `  Total: ${results.length} | OK: ${successes.length} | Failed: ${failures.length}`,
+  );
 
   if (latencies.length > 0) {
     console.log(
@@ -116,7 +122,9 @@ function printStats(label: string, results: ProbeResult[]) {
 
 async function main() {
   // Grab a sample of real as_ids from the database
-  console.log(`Fetching ${SAMPLE_SIZE} substance IDs from eu_active_substances...`);
+  console.log(
+    `Fetching ${SAMPLE_SIZE} substance IDs from eu_active_substances...`,
+  );
 
   const rows = await db
     .selectFrom("eu_active_substances")
@@ -126,10 +134,14 @@ async function main() {
     .execute();
 
   const sampleIds = rows.map((r) => r.as_id);
-  console.log(`Got ${sampleIds.length} IDs: [${sampleIds[0]}..${sampleIds[sampleIds.length - 1]}]`);
+  console.log(
+    `Got ${sampleIds.length} IDs: [${sampleIds[0]}..${sampleIds[sampleIds.length - 1]}]`,
+  );
 
   // ── 1. First, fetch ONE to inspect response shape ──────────────────────
-  console.log(`\nFetching single record (as_id=${sampleIds[0]}) to inspect response shape...`);
+  console.log(
+    `\nFetching single record (as_id=${sampleIds[0]}) to inspect response shape...`,
+  );
 
   const shapeRes = await fetch(`${BASE_URL}/${sampleIds[0]}`, {
     headers: {
@@ -141,13 +153,17 @@ async function main() {
   if (shapeRes.ok) {
     const body = await shapeRes.json();
     console.log("\n── RESPONSE SHAPE ──");
-    console.log(`Type: ${typeof body} | isArray: ${Array.isArray(body)}`);
+    console.log(
+      `Type: ${typeof body} | isArray: ${Array.isArray(body)}`,
+    );
 
     if (typeof body === "object" && body !== null) {
       console.log(`Top-level keys: ${Object.keys(body).join(", ")}`);
       // Print each key with its type and a preview
       for (const [key, val] of Object.entries(body)) {
-        const type = Array.isArray(val) ? `array[${(val as any[]).length}]` : typeof val;
+        const type = Array.isArray(val)
+          ? `array[${(val as any[]).length}]`
+          : typeof val;
         const preview =
           typeof val === "string"
             ? val.slice(0, 80)
@@ -159,36 +175,61 @@ async function main() {
 
       // If there's a documents-like array, print its first element fully
       for (const [key, val] of Object.entries(body)) {
-        if (Array.isArray(val) && (val as any[]).length > 0 && typeof (val as any[])[0] === "object") {
+        if (
+          Array.isArray(val) &&
+          (val as any[]).length > 0 &&
+          typeof (val as any[])[0] === "object"
+        ) {
           console.log(`\n  Full first element of "${key}":`);
-          console.log(`  ${JSON.stringify((val as any[])[0], null, 2).split("\n").join("\n  ")}`);
+          console.log(
+            `  ${JSON.stringify((val as any[])[0], null, 2)
+              .split("\n")
+              .join("\n  ")}`,
+          );
         }
       }
     } else {
-      console.log(`Full body (first 500 chars): ${JSON.stringify(body).slice(0, 500)}`);
+      console.log(
+        `Full body (first 500 chars): ${JSON.stringify(body).slice(0, 500)}`,
+      );
     }
   } else {
-    console.log(`Single fetch failed: ${shapeRes.status} ${shapeRes.statusText}`);
+    console.log(
+      `Single fetch failed: ${shapeRes.status} ${shapeRes.statusText}`,
+    );
     const text = await shapeRes.text();
     console.log(`Body: ${text.slice(0, 300)}`);
   }
 
   // ── 2. Test each concurrency level ─────────────────────────────────────
   for (const concurrency of CONCURRENCY_LEVELS) {
-    console.log(`\nTesting concurrency=${concurrency} with ${sampleIds.length} IDs...`);
+    console.log(
+      `\nTesting concurrency=${concurrency} with ${sampleIds.length} IDs...`,
+    );
     const start = Date.now();
-    const results = await withConcurrency(sampleIds, concurrency, probeOne);
+    const results = await withConcurrency(
+      sampleIds,
+      concurrency,
+      probeOne,
+    );
     const wallTime = ((Date.now() - start) / 1000).toFixed(1);
-    printStats(`Concurrency ${concurrency} (${wallTime}s wall time)`, results);
+    printStats(
+      `Concurrency ${concurrency} (${wallTime}s wall time)`,
+      results,
+    );
   }
 
   // ── 3. Recommendation ──────────────────────────────────────────────────
   console.log("\n── RECOMMENDATION ──");
-  console.log("Pick the highest concurrency where failures=0 and p95 < 2000ms.");
+  console.log(
+    "Pick the highest concurrency where failures=0 and p95 < 2000ms.",
+  );
   console.log("For 1,482 substances:");
   for (const c of CONCURRENCY_LEVELS) {
     const estSeconds = Math.ceil((1482 / c) * 0.3); // rough estimate at 300ms avg
-    console.log(`  concurrency=${c}: ~${estSeconds}s (~${(estSeconds / 60).toFixed(1)} min)`);
+    console.log(
+      `  concurrency=${c}: ~${estSeconds}s (~${(estSeconds / 60).toFixed(1)} min)`,
+    );
   }
 }
 

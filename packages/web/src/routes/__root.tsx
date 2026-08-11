@@ -1,31 +1,112 @@
 import type { ReactNode } from "react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Outlet,
   createRootRoute,
   HeadContent,
   Scripts,
   Link,
-  createRouter,
   useNavigate,
 } from "@tanstack/react-router";
 import {
   QueryClient,
   QueryClientProvider,
 } from "@tanstack/react-query";
-import { ApiError } from "~/lib/api";
+import { isToolUIPart, getToolName } from "ai";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { ApiError } from "~/lib/types";
 import { CommandPalette } from "~/components/CommandPalette";
+import { PaletteProvider, usePalette } from "~/hooks/usePalette";
 import appCss from "~/styles/app.css?url";
-import { usePalette, PaletteContext } from "~/hooks/usePalette";
 
-// ---------------------------------------------------------------------------
-// Palette open/close context (shared across all routes)
-// ---------------------------------------------------------------------------
+/* ─── injected styles for omnibar + answer panel ─── */
+const ROOT_CSS = `
+@keyframes omnibar-in {
+  0%   { transform: translateY(-110%); }
+  100% { transform: translateY(0); }
+}
+@keyframes spin-arc {
+  to { transform: rotate(360deg); }
+}
+.rb-omnibar {
+  position: fixed; top: 48px; left: 0; right: 0; z-index: 40;
+  background: rgba(245,245,245,0.95);
+  backdrop-filter: blur(20px);
+  border-bottom: 0.5px solid rgba(0,0,0,0.10);
+  animation: omnibar-in 0.25s cubic-bezier(0.4,0,0.2,1) forwards;
+}
+.rb-omnibar-inner {
+  max-width: 80rem; /* matches max-w-7xl from nav */
+  margin: 0 auto;
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 20px;
+}
+.rb-omnibar-input {
+  flex: 1; border: none; background: transparent;
+  font-size: 15px; color: #111; outline: none;
+  font-family: inherit;
+}
+.rb-omnibar-input::placeholder { color: #bbb; }
+.rb-stop-btn {
+  width: 28px; height: 28px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; flex-shrink: 0; position: relative;
+  background: transparent; border: none; padding: 0;
+}
+.rb-stop-arc {
+  position: absolute; inset: 0; border-radius: 50%;
+  border: 2px solid transparent;
+  border-top-color: #16a34a;
+  border-right-color: #16a34a;
+  animation: spin-arc 0.8s linear infinite;
+}
+.rb-stop-sq {
+  width: 8px; height: 8px; border-radius: 2px;
+  background: #16a34a; flex-shrink: 0;
+}
+.rb-stop-btn.idle .rb-stop-arc { display: none; }
+.rb-stop-btn.idle .rb-stop-sq  { background: #ccc; }
+.rb-answer-panel {
+  position: fixed; top: 96px; left: 0; right: 0; bottom: 0;
+  overflow-y: auto; z-index: 35;
+  background: #f5f5f5;
+}
+.rb-answer-inner {
+  max-width: 680px; margin: 0 auto;
+  padding: 28px 24px 120px;
+}
+.rb-tool-pills { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 18px; }
+.rb-tool-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11px; font-family: monospace; padding: 2px 8px;
+  border-radius: 20px;
+}
+.rb-tool-done    { background: rgba(22,163,74,0.10); color: #16a34a; border: 0.5px solid rgba(22,163,74,0.25); }
+.rb-tool-running { background: rgba(245,158,11,0.10); color: #b45309; border: 0.5px solid rgba(245,158,11,0.25); }
+.rb-ai-prose p         { font-size: 14px; line-height: 1.75; color: #111; margin-bottom: 12px; }
+.rb-ai-prose strong    { font-weight: 600; }
+.rb-ai-prose h3        { font-size: 15px; font-weight: 600; margin: 12px 0 4px; }
+.rb-ai-prose table     { width: 100%; border-collapse: collapse; margin: 12px 0 20px; font-size: 13px; }
+.rb-ai-prose th        { font-size: 10px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #999; padding: 7px 10px; border-bottom: 1.5px solid rgba(0,0,0,0.12); text-align: left; }
+.rb-ai-prose td        { padding: 8px 10px; border-bottom: 0.5px solid rgba(0,0,0,0.07); color: #111; }
+.rb-ai-prose tr:last-child td { border-bottom: none; }
+.rb-ai-prose a         { color: #16a34a; text-decoration: none; }
+.rb-ai-prose ul        { padding-left: 20px; margin-bottom: 10px; font-size: 14px; }
+.rb-ai-prose ol        { padding-left: 20px; margin-bottom: 10px; font-size: 14px; }
+.rb-ai-prose code      { font-size: 12px; font-family: monospace; background: rgba(0,0,0,0.04); padding: 1px 4px; border-radius: 4px; }
+.rb-ai-prose pre       { background: rgba(0,0,0,0.04); border-radius: 8px; padding: 10px 14px; overflow-x: auto; margin: 8px 0; }
+.rb-user-bubble {
+  display: flex; justify-content: flex-end; margin-bottom: 16px;
+}
+.rb-user-bubble-inner {
+  background: rgba(22,163,74,0.10); color: #16a34a;
+  font-size: 14px; padding: 8px 14px; border-radius: 12px;
+  max-width: 85%;
+}
+`;
 
-// ---------------------------------------------------------------------------
-// Query client (stable across renders)
-// ---------------------------------------------------------------------------
-
+/* ─── Query client ─── */
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -40,10 +121,7 @@ const queryClient = new QueryClient({
   },
 });
 
-// ---------------------------------------------------------------------------
-// Route
-// ---------------------------------------------------------------------------
-
+/* ─── Route ─── */
 export const Route = createRootRoute({
   head: () => ({
     meta: [
@@ -55,6 +133,7 @@ export const Route = createRootRoute({
       { title: "LS — Regulatory Intelligence" },
     ],
     links: [
+      { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },
       { rel: "stylesheet", href: appCss },
       {
         rel: "stylesheet",
@@ -75,44 +154,273 @@ export const Route = createRootRoute({
   ),
 });
 
-// ---------------------------------------------------------------------------
-// Components
-// ---------------------------------------------------------------------------
-
 function RootComponent() {
-  const [paletteOpen, setPaletteOpen] = useState(false);
+  return (
+    <QueryClientProvider client={queryClient}>
+      <PaletteProvider>
+        <RootInner />
+      </PaletteProvider>
+    </QueryClientProvider>
+  );
+}
 
-  // ⌘K / Ctrl+K global listener
+function RootInner() {
+  const { open, setOpen, aiMode, setAiMode, resetAi } = usePalette();
+
+  /* ⌘K / Ctrl+K global listener */
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
-        setPaletteOpen((prev) => !prev);
+        /* if in AI answer mode, open palette on top (lookup) without resetting */
+        setOpen((prev) => !prev);
       }
       if (e.key === "Escape") {
-        setPaletteOpen(false);
+        if (open) setOpen(false);
+        /* Esc does NOT reset aiMode — user must use "New search" */
       }
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [open, setOpen]);
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <PaletteContext.Provider
-        value={{ open: paletteOpen, setOpen: setPaletteOpen }}
-      >
-        <RootDocument>
-          <TopBar />
-          <Outlet />
-          <FloatingFooter />
-          <CommandPalette
-            open={paletteOpen}
-            onClose={() => setPaletteOpen(false)}
+    <RootDocument>
+      <style>{ROOT_CSS}</style>
+      <TopBar />
+
+      {/* Desktop AI answer layer — only shown when aiMode is true */}
+      {aiMode && (
+        <DesktopAiLayer
+          onNewSearch={() => {
+            resetAi();
+            setOpen(true);
+          }}
+        />
+      )}
+
+      <Outlet />
+      <FloatingFooter />
+
+      <CommandPalette
+        open={open}
+        onClose={() => setOpen(false)}
+        onAiSubmit={() => {
+          setOpen(false);
+          setAiMode(true);
+        }}
+      />
+    </RootDocument>
+  );
+}
+
+/* ─── Desktop omnibar + answer panel ─── */
+function DesktopAiLayer({
+  onNewSearch,
+}: {
+  onNewSearch: () => void;
+}) {
+  const { messages, sendMessage, stop, status, isBusy } =
+    usePalette();
+  const [followUp, setFollowUp] = useState("");
+  const answerRef = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
+
+  /* scroll to bottom as messages stream */
+  useEffect(() => {
+    if (answerRef.current)
+      answerRef.current.scrollTop = answerRef.current.scrollHeight;
+  }, [messages]);
+
+  function handleFollowUp(e: React.KeyboardEvent) {
+    if (e.key !== "Enter" || e.shiftKey || !followUp.trim() || isBusy)
+      return;
+    sendMessage({ text: followUp.trim() });
+    setFollowUp("");
+  }
+
+  function handleLinkClick(e: React.MouseEvent) {
+    const t = e.target as HTMLAnchorElement;
+    if (
+      t.tagName === "A" &&
+      t.getAttribute("href")?.startsWith("/")
+    ) {
+      e.preventDefault();
+      navigate({ to: t.getAttribute("href")! });
+    }
+  }
+
+  return (
+    <>
+      {/* Omnibar */}
+      <div className="rb-omnibar hidden sm:block">
+        <div className="rb-omnibar-inner">
+          <span
+            style={{ fontSize: 14, color: "#16a34a", flexShrink: 0 }}
+          >
+            ✦
+          </span>
+          <input
+            className="rb-omnibar-input"
+            value={followUp}
+            onChange={(e) => setFollowUp(e.target.value)}
+            onKeyDown={handleFollowUp}
+            placeholder="Ask a follow-up…"
+            disabled={isBusy}
           />
-        </RootDocument>
-      </PaletteContext.Provider>
-    </QueryClientProvider>
+          <span
+            style={{
+              fontSize: 11,
+              fontWeight: 600,
+              padding: "2px 8px",
+              borderRadius: 20,
+              background: "rgba(22,163,74,0.10)",
+              color: "#16a34a",
+              border: "0.5px solid rgba(22,163,74,0.30)",
+              flexShrink: 0,
+            }}
+          >
+            AI
+          </span>
+
+          {/* Stop / idle indicator */}
+          <button
+            className={`rb-stop-btn ${isBusy ? "" : "idle"}`}
+            onClick={() => {
+              if (isBusy) stop();
+            }}
+            title={isBusy ? "Stop generation" : "Done"}
+            aria-label={
+              isBusy ? "Stop generation" : "Generation complete"
+            }
+          >
+            {isBusy && <span className="rb-stop-arc" />}
+            <span className="rb-stop-sq" />
+          </button>
+
+          <button
+            onClick={onNewSearch}
+            style={{
+              fontSize: 12,
+              color: "#999",
+              border: "0.5px solid rgba(0,0,0,0.14)",
+              borderRadius: 6,
+              padding: "3px 10px",
+              background: "transparent",
+              cursor: "pointer",
+              flexShrink: 0,
+              fontFamily: "inherit",
+            }}
+          >
+            New search ⌘K
+          </button>
+        </div>
+      </div>
+
+      {/* Answer panel */}
+      <div
+        className="rb-answer-panel hidden sm:block"
+        ref={answerRef}
+        onClick={handleLinkClick}
+      >
+        <div className="rb-answer-inner">
+          {messages.map((msg) => (
+            <div key={msg.id}>
+              {msg.role === "user" && (
+                <div className="rb-user-bubble">
+                  <div className="rb-user-bubble-inner">
+                    {msg.parts
+                      .filter((p: any) => p.type === "text")
+                      .map((p: any, i: number) => (
+                        <span key={i}>{p.text}</span>
+                      ))}
+                  </div>
+                </div>
+              )}
+              {msg.role === "assistant" && (
+                <div>
+                  <div className="rb-tool-pills">
+                    {msg.parts
+                      ?.filter(isToolUIPart)
+                      .map((part: any, i: number) => {
+                        const isDone =
+                          part.state === "output-available";
+                        const isRunning =
+                          part.state === "input-streaming" ||
+                          part.state === "input-available";
+                        return (
+                          <span
+                            key={i}
+                            className={`rb-tool-pill ${isDone ? "rb-tool-done" : ""} ${isRunning ? "rb-tool-running" : ""}`}
+                          >
+                            {isDone && "✓ "}
+                            {isRunning && (
+                              <span
+                                style={{
+                                  width: 6,
+                                  height: 6,
+                                  borderRadius: "50%",
+                                  background: "#d97706",
+                                  display: "inline-block",
+                                }}
+                              />
+                            )}
+                            {getToolName(part)}
+                          </span>
+                        );
+                      })}
+                  </div>
+                  <div className="rb-ai-prose">
+                    {msg.parts
+                      ?.filter(
+                        (p: any) => p.type === "text" && p.text,
+                      )
+                      .map((p: any, i: number) => (
+                        <ReactMarkdown
+                          key={i}
+                          remarkPlugins={[remarkGfm]}
+                        >
+                          {p.text}
+                        </ReactMarkdown>
+                      ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+
+          {/* Thinking indicator */}
+          {isBusy &&
+            !messages.some(
+              (m) =>
+                m.role === "assistant" &&
+                m.parts?.some((p: any) => p.type === "text"),
+            ) && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "12px 0",
+                }}
+              >
+                <div
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: "50%",
+                    background: "#16a34a",
+                  }}
+                  className="animate-pulse"
+                />
+                <span style={{ fontSize: 13, color: "#666" }}>
+                  Analysing…
+                </span>
+              </div>
+            )}
+        </div>
+      </div>
+    </>
   );
 }
 
@@ -132,17 +440,13 @@ function RootDocument({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Top bar
-// ---------------------------------------------------------------------------
-
+/* ─── Top bar (unchanged logic) ─── */
 function TopBar() {
   const { setOpen } = usePalette();
   const [dismissed, setDismissed] = useState(false);
 
   return (
     <>
-      {/* Mobile banner */}
       {!dismissed && (
         <div className="block lg:hidden bg-brand/10 border-b border-brand/20 px-4 py-2 text-center text-xs text-txt-secondary">
           <span>For the full ⌘K experience, open on desktop</span>
@@ -156,20 +460,16 @@ function TopBar() {
       )}
       <header className="sticky top-0 z-30 border-b border-border bg-surface-card">
         <div className="max-w-7xl mx-auto flex items-center justify-between px-5 py-2.5">
-          {/* Logo */}
           <Link
             to="/"
             className="text-brand font-bold text-lg tracking-tight"
           >
             LS
           </Link>
-
-          {/* Centered Search trigger with Ctrl/⌘ + K */}
           <button
             onClick={() => setOpen(true)}
             className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1.5 text-txt-tertiary hover:text-txt-secondary transition-colors text-sm"
           >
-            {/* Search icon visible on mobile only */}
             <svg
               className="w-5 h-5 lg:hidden"
               fill="none"
@@ -183,7 +483,6 @@ function TopBar() {
                 d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z"
               />
             </svg>
-            {/* ⌘K hint visible on desktop only */}
             <span className="hidden lg:flex items-center gap-1">
               <kbd className="kbd">Ctrl</kbd>
               <span className="text-txt-tertiary">/</span>
@@ -191,12 +490,9 @@ function TopBar() {
               <kbd className="kbd">K</kbd>
             </span>
           </button>
-
-          {/* Right tabs */}
-          <nav className="flex items-center gap-6 text-sm">
+          <nav className="flex items-center gap-4 sm:gap-6 text-xs sm:text-sm">
             <Link
               to="/"
-              className="hidden sm:block text-brand font-medium"
               activeProps={{ className: "text-brand font-medium" }}
               inactiveProps={{
                 className:
@@ -205,22 +501,32 @@ function TopBar() {
             >
               Explorer
             </Link>
-            <button className="hidden sm:block text-txt-secondary hover:text-txt-primary transition-colors">
+            <Link
+              to="/mcp"
+              activeProps={{ className: "text-brand font-medium" }}
+              inactiveProps={{
+                className:
+                  "text-txt-secondary hover:text-txt-primary",
+              }}
+            >
               MCP
-            </button>
-            <button className="hidden sm:block text-txt-secondary hover:text-txt-primary transition-colors">
+            </Link>
+            <Link
+              to="/architecture"
+              activeProps={{ className: "text-brand font-medium" }}
+              inactiveProps={{
+                className:
+                  "text-txt-secondary hover:text-txt-primary whitespace-nowrap",
+              }}
+            >
               Architecture
-            </button>
+            </Link>
           </nav>
         </div>
       </header>
     </>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Floating footer
-// ---------------------------------------------------------------------------
 
 function FloatingFooter() {
   return (

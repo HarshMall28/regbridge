@@ -1,6 +1,11 @@
-// src/env.d.ts
-/// <reference types="vite/client" />
-declare module "*.css?url" {
-  const url: string;
-  export default url;
+// Manual ambient types for `import { env } from "cloudflare:workers"`.
+// This project relies on this file (not worker-configuration.d.ts) for the
+// module — keep secrets/bindings listed here so IDE + tsc resolve them.
+declare module "cloudflare:workers" {
+  const env: {
+    API: Fetcher;
+    API_KEY: string;
+    OPENROUTER_API_KEY: string;
+  };
+  export { env };
 }

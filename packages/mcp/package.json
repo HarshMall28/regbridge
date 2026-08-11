@@ -1,17 +1,18 @@
 {
   "name": "@regbridge/mcp",
-  "module": "index.ts",
-  "type": "module",
   "private": true,
-  "devDependencies": {
-    "@types/bun": "^1.3.14"
-  },
-  "peerDependencies": {
-    "typescript": "^5"
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.30.0",
-    "@regbridge/db": "workspace:*",
+    "@modelcontextprotocol/server": "latest",
+    "@regbridge/api-client": "workspace:*",
+    "agents": "latest",
     "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260101.0",
+    "wrangler": "^4.0.0"
   }
 }
