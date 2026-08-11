@@ -1,71 +1,85 @@
-/**
- * RegBridge API — HTTP server
- */
-
-import {
-  HttpApiBuilder,
-  HttpApiSwagger,
-  HttpMiddleware,
-  HttpServerRequest,
-  HttpServerResponse,
-} from "@effect/platform";
-import { BunHttpServer, BunRuntime } from "@effect/platform-bun";
-import { Effect, Layer } from "effect";
+import { HttpApiBuilder, HttpApiSwagger } from "@effect/platform";
+import { Layer } from "effect";
 import { ApiLive } from "./handlers.js";
+import { initDb } from "@regbridge/db";
 
-const PORT = parseInt(Bun.env.PORT ?? "3000", 10);
+// ApiLive feeds into Swagger — dependency resolved via provideMerge
+const ServerLive = HttpApiSwagger.layer({ path: "/docs" }).pipe(
+  Layer.provideMerge(ApiLive),
+) as Layer.Layer<any, never, never>;
 
-// ---------------------------------------------------------------------------
-// CORS middleware — allows localhost + ngrok origins
-// ---------------------------------------------------------------------------
-const CorsMiddleware = HttpMiddleware.make((app) =>
-  Effect.gen(function* () {
-    const req = yield* HttpServerRequest.HttpServerRequest;
+interface Env {
+  DATABASE_URL: string;
+  API_KEY: string;
+}
 
-    const corsHeaders = {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, OPTIONS",
-      "Access-Control-Allow-Headers":
-        "Content-Type, ngrok-skip-browser-warning",
-    };
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, OPTIONS",
+  "Access-Control-Allow-Headers":
+    "Content-Type, ngrok-skip-browser-warning, x-api-key",
+};
 
-    // Handle preflight
-    if (req.method === "OPTIONS") {
-      return HttpServerResponse.empty({
+let webHandler: ((request: Request) => Promise<Response>) | null =
+  null;
+
+export default {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    // CORS preflight — return immediately, never touch Effect
+    if (request.method === "OPTIONS") {
+      return new Response(null, {
         status: 204,
         headers: corsHeaders,
       });
     }
 
-    // Normal request — run handler then attach CORS headers
-    const res = yield* app;
-    return res.pipe(
-      HttpServerResponse.setHeader(
-        "Access-Control-Allow-Origin",
-        "*",
-      ),
-      HttpServerResponse.setHeader(
-        "Access-Control-Allow-Methods",
-        "GET, OPTIONS",
-      ),
-      HttpServerResponse.setHeader(
-        "Access-Control-Allow-Headers",
-        "Content-Type, ngrok-skip-browser-warning",
-      ),
+    // API key check — only for /api/*, docs stay open
+    const url = new URL(request.url);
+    if (
+      url.pathname.startsWith("/api/") &&
+      request.headers.get("x-api-key") !== env.API_KEY
+    ) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: {
+          "content-type": "application/json",
+          ...corsHeaders,
+        },
+      });
+    }
+
+    // Initialize DB once per isolate
+    initDb(env.DATABASE_URL);
+
+    // Build handler once per isolate
+    if (!webHandler) {
+      const result = HttpApiBuilder.toWebHandler(
+        ServerLive,
+      ) as unknown;
+      // Handle both return shapes: direct handler or { handler, dispose }
+      webHandler =
+        result && typeof result === "object" && "handler" in result
+          ? (
+              result as {
+                handler: (req: Request) => Promise<Response>;
+              }
+            ).handler
+          : (result as (req: Request) => Promise<Response>);
+    }
+
+    // Effect handles the request
+    const response = await webHandler!(request);
+
+    // Append CORS headers to every response (bypasses Effect serialization bug)
+    const headers = new Headers(response.headers);
+    Object.entries(corsHeaders).forEach(([k, v]) =>
+      headers.set(k, v),
     );
-  }),
-);
 
-// ---------------------------------------------------------------------------
-// Server
-// ---------------------------------------------------------------------------
-const ServerLive = HttpApiBuilder.serve((app) =>
-  HttpMiddleware.logger(CorsMiddleware(app)),
-).pipe(
-  Layer.provide(HttpApiSwagger.layer({ path: "/docs" })),
-  Layer.provide(ApiLive),
-  Layer.provide(BunHttpServer.layer({ port: PORT })),
-);
-
-BunRuntime.runMain(Layer.launch(ServerLive));
-console.log(`Server running on port: ${PORT}`);
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    });
+  },
+} satisfies ExportedHandler<Env>;

@@ -209,6 +209,10 @@ export const SubstanceProfile = Schema.Struct({
 // ---------------------------------------------------------------------------
 
 export const ProductSearchParams = Schema.Struct({
+  q: Schema.optional(Schema.String).annotations({
+    description:
+      "General text search across product name, substance, and auth holder",
+  }),
   substance: Schema.optional(Schema.String).annotations({
     description: "Filter by active substance name",
   }),

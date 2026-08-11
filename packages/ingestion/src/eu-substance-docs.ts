@@ -8,7 +8,9 @@
  * Run from monorepo root: bun run ingest:eu-substance-docs
  */
 
-import { db, sql } from "@regbridge/db";
+import { db, initDb, sql } from "@regbridge/db";
+
+initDb(Bun.env.DATABASE_URL!);
 
 // ── Config ─────────────────────────────────────────────────────────────────
 
@@ -83,10 +85,16 @@ async function fetchDocs(
           return { asId, docs: [] }; // substance doesn't exist on this backend
         }
         if (attempt < retries) {
-          await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+          await new Promise((r) =>
+            setTimeout(r, 1000 * (attempt + 1)),
+          );
           continue;
         }
-        return { asId, docs: [], error: `${res.status} ${res.statusText}` };
+        return {
+          asId,
+          docs: [],
+          error: `${res.status} ${res.statusText}`,
+        };
       }
 
       const data: APIResponse = await res.json();
@@ -109,7 +117,9 @@ async function main() {
   const startTime = Date.now();
 
   // ── 1. Get all substance IDs ───────────────────────────────────────────
-  console.log("Fetching all substance IDs from eu_active_substances...");
+  console.log(
+    "Fetching all substance IDs from eu_active_substances...",
+  );
   const substances = await db
     .selectFrom("eu_active_substances")
     .select("as_id")
@@ -117,7 +127,9 @@ async function main() {
     .execute();
 
   const asIds = substances.map((r) => r.as_id);
-  console.log(`Found ${asIds.length} substances to fetch documents for`);
+  console.log(
+    `Found ${asIds.length} substances to fetch documents for`,
+  );
 
   // ── 2. Fetch all at concurrency 20 ─────────────────────────────────────
   console.log(`Fetching documents at concurrency=${CONCURRENCY}...`);
@@ -132,14 +144,20 @@ async function main() {
   const CHUNK = 200;
   for (let c = 0; c < asIds.length; c += CHUNK) {
     const chunk = asIds.slice(c, c + CHUNK);
-    const results = await withConcurrency(chunk, CONCURRENCY, fetchDocs);
+    const results = await withConcurrency(
+      chunk,
+      CONCURRENCY,
+      fetchDocs,
+    );
 
     for (const result of results) {
       fetched++;
       if (result.error) {
         errors++;
         if (errors <= 10) {
-          console.warn(`  Error as_id=${result.asId}: ${result.error}`);
+          console.warn(
+            `  Error as_id=${result.asId}: ${result.error}`,
+          );
         }
       }
       if (result.docs.length > 0) {
@@ -176,12 +194,17 @@ async function main() {
   if (allDocRows.length === 0) {
     console.log("No documents to insert.");
   } else {
-    console.log(`\nInserting ${allDocRows.length} document records...`);
+    console.log(
+      `\nInserting ${allDocRows.length} document records...`,
+    );
     await sql`DELETE FROM eu_substance_documents`.execute(db);
 
     for (let i = 0; i < allDocRows.length; i += BATCH_SIZE) {
       const batch = allDocRows.slice(i, i + BATCH_SIZE);
-      await db.insertInto("eu_substance_documents").values(batch).execute();
+      await db
+        .insertInto("eu_substance_documents")
+        .values(batch)
+        .execute();
     }
     console.log(`  ✓ ${allDocRows.length} document records inserted`);
   }

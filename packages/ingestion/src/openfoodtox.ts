@@ -7,7 +7,9 @@
  */
 import * as XLSX from "xlsx";
 import * as fs from "fs";
-import { db, sql } from "@regbridge/db";
+import { db, initDb, sql } from "@regbridge/db";
+
+initDb(Bun.env.DATABASE_URL!);
 
 const DOWNLOAD_URL =
   "https://zenodo.org/records/19388272/files/OFT3.0%20export%20repository.xlsx?download=1";

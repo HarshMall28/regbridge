@@ -9,7 +9,7 @@ import {
   type IeProductDetail,
   type FrProductDetail,
   type FrAuthorizedUse,
-} from "../../../lib/api-products";
+} from "../../../lib/types";
 import {
   parseUsage,
   formatDose,

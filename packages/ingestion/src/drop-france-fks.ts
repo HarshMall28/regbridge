@@ -1,5 +1,7 @@
 // packages/ingestion/src/drop-france-fks.ts
-import { db, sql } from "@regbridge/db";
+import { db, initDb, sql } from "@regbridge/db";
+
+initDb(Bun.env.DATABASE_URL!);
 
 const result = await sql`
   SELECT conname, conrelid::regclass AS table_name
